@@ -1,0 +1,106 @@
+name: JITL NPM Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, for example 0.1.98-jitl.0"
+        required: true
+        type: string
+      dryRun:
+        description: "Run npm publish --dry-run instead of publishing"
+        required: true
+        default: true
+        type: boolean
+      npmTag:
+        description: "npm dist-tag"
+        required: true
+        default: "jitl"
+        type: string
+  push:
+    tags:
+      - "jitl-v*"
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.15.2
+  NPM_SCOPE: "@jitl"
+
+jobs:
+  publish:
+    name: Publish @jitl packages
+    if: github.repository_owner == 'jitl'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Resolve release inputs
+        id: release
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            DRY_RUN="${{ inputs.dryRun }}"
+            NPM_TAG="${{ inputs.npmTag }}"
+          else
+            VERSION="${GITHUB_REF_NAME#jitl-v}"
+            DRY_RUN="false"
+            NPM_TAG="jitl"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Prepare release versions
+        run: bun scripts/prepare-release.ts "${{ steps.release.outputs.version }}"
+
+      - name: Build package artifacts
+        run: |
+          set -euo pipefail
+
+          cd packages/core
+          bun run build:native --all
+          bun run build:lib
+
+          cd ../solid
+          bun run build
+
+          cd ../react
+          bun run build
+
+      - name: Publish scoped packages
+        run: |
+          set -euo pipefail
+
+          DRY_RUN_ARG=""
+          if [ "${{ steps.release.outputs.dry_run }}" = "true" ]; then
+            DRY_RUN_ARG="--dry-run"
+          fi
+
+          bun scripts/publish-scoped.ts \
+            --scope "$NPM_SCOPE" \
+            --tag "${{ steps.release.outputs.npm_tag }}" \
+            $DRY_RUN_ARG
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
