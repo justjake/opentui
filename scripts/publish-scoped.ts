@@ -16,6 +16,7 @@ interface Options {
   targetScope: string
   dryRun: boolean
   keepStage: boolean
+  skipExisting: boolean
   tag?: string
   access: string
 }
@@ -40,6 +41,7 @@ function parseArgs(): Options {
     targetScope: process.env.NPM_SCOPE || "@jitl",
     dryRun: process.env.DRY_RUN === "true",
     keepStage: false,
+    skipExisting: false,
     tag: process.env.NPM_TAG,
     access: "public",
   }
@@ -55,6 +57,11 @@ function parseArgs(): Options {
 
     if (arg === "--keep-stage") {
       options.keepStage = true
+      continue
+    }
+
+    if (arg === "--skip-existing") {
+      options.skipExisting = true
       continue
     }
 
@@ -114,6 +121,7 @@ function parseArgs(): Options {
           "  --tag <tag>              npm dist-tag for publish.",
           "  --dry-run                Run npm publish --dry-run.",
           "  --keep-stage             Keep the staged rewritten package directory.",
+          "  --skip-existing          Skip packages whose exact version already exists on npm.",
           "  --access <access>        npm package access. Defaults to public.",
         ].join("\n"),
       )
@@ -283,8 +291,9 @@ function runNpm(args: string[], cwd: string, stageRoot: string, npmUserConfig?: 
 
 function verifyNpmAuth(stageRoot: string, npmUserConfig?: string): void {
   const token = process.env.NPM_AUTH_TOKEN || process.env.NODE_AUTH_TOKEN
-  if (process.env.CI === "true" && !token) {
-    throw new Error("NPM_AUTH_TOKEN or NODE_AUTH_TOKEN must be set when publishing in CI")
+  if (!token) {
+    console.log("Skipping npm whoami; relying on npm trusted publishing or existing npm config.")
+    return
   }
 
   console.log("Verifying npm authentication...")
@@ -320,8 +329,16 @@ function packageVersionExists(
 function publishPackage(pkg: PublishPackage, options: Options, stageRoot: string, npmUserConfig?: string): void {
   console.log(`\n${options.dryRun ? "Checking" : "Publishing"} ${pkg.name}@${pkg.version}`)
 
-  if (!options.dryRun && packageVersionExists(pkg.name, pkg.version, stageRoot, npmUserConfig)) {
-    throw new Error(`${pkg.name}@${pkg.version} already exists on npm`)
+  if (!options.dryRun) {
+    const alreadyPublished = packageVersionExists(pkg.name, pkg.version, stageRoot, npmUserConfig)
+    if (alreadyPublished && options.skipExisting) {
+      console.log(`Skipping ${pkg.name}@${pkg.version}; it already exists on npm.`)
+      return
+    }
+
+    if (alreadyPublished) {
+      throw new Error(`${pkg.name}@${pkg.version} already exists on npm`)
+    }
   }
 
   const publishArgs = ["publish", "--access", options.access]
