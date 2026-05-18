@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
-import { extname, isAbsolute, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { extname } from "node:path"
+import { pathToFileURL } from "node:url"
 import { Worker as NodeWorker } from "node:worker_threads"
 
 type MessageEventLike<T = unknown> = { data: T }
@@ -44,6 +44,10 @@ export function resolveWorkerEntrypoint(url: string | URL): string | URL {
   return target
 }
 
+export function resolveImportArg(url: string | URL): string {
+  return `--import=${resolveWorkerTarget(url)}`
+}
+
 function normalizeExtension(specifier: string): string
 function normalizeExtension(specifier: URL): URL
 function normalizeExtension(specifier: string | URL): string | URL {
@@ -75,7 +79,7 @@ export class Worker extends NodeWorker {
     let execArgv = process.execArgv
     if (import.meta.url.endsWith(".ts")) {
       registerJs ??= normalizeExtension(new URL("./registerResolveJs.js", import.meta.url))
-      const registerJsArg = `--import=${fileURLToPath(resolveWorkerTarget(registerJs))}`
+      const registerJsArg = resolveImportArg(registerJs)
       if (!execArgv.includes(registerJsArg)) {
         execArgv = [...execArgv, registerJsArg]
       }
