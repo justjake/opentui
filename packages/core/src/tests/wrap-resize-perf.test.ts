@@ -189,7 +189,7 @@ describe("Word wrap algorithmic complexity", () => {
 
   it("should have O(n) complexity for char wrap mode", () => {
     const smallSize = 20000
-    const largeSize = 40000
+    const largeSize = 60000
 
     const smallText = "x".repeat(smallSize)
     const largeText = "x".repeat(largeSize)

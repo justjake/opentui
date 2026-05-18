@@ -8,9 +8,13 @@ type ErrorEventLike = { message: string }
 
 const ownExtension = extname(import.meta.url)
 const knownProtocolRegex = /^(file|data|node):/
+const windowsDriveProtocolRegex = /^[a-zA-Z]:$/
 
-function resolveWorkerTarget(url: string | URL): string {
+export function resolveWorkerTarget(url: string | URL): string {
   if (url instanceof URL) {
+    if (windowsDriveProtocolRegex.test(url.protocol)) {
+      return pathToFileURL(url.href).href
+    }
     return url.href
   }
 
