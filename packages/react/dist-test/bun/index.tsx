@@ -86,7 +86,7 @@ describe("@opentui/react dist test (Bun)", () => {
   })
 
   test("uses createRoot directly with createTestRenderer", async () => {
-    const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({
+    const { renderer, captureCharFrame } = await createTestRenderer({
       width: 30,
       height: 4,
     })
@@ -99,7 +99,7 @@ describe("@opentui/react dist test (Bun)", () => {
       act(() => {
         root.render(<text>Direct root render</text>)
       })
-      await renderOnce()
+      await renderer.idle()
       expect(captureCharFrame()).toMatch(/Direct root render/)
     } finally {
       act(() => {
