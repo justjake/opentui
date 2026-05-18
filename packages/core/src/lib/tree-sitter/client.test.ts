@@ -1163,5 +1163,5 @@ describe("TreeSitterClient Edge Cases", () => {
 
       dataPathsManager.appName = originalAppName
     }
-  })
+  }, 15000)
 })

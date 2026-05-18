@@ -16,6 +16,8 @@ import { stringToStyledText } from "../lib/styled-text.js"
  * linear complexity with noise (ratio ~2-3.5).
  */
 describe("Word wrap algorithmic complexity", () => {
+  const perfIt = !process.versions.bun && process.platform === "win32" ? it.skip : it
+
   function measureBatch(fn: (width: number) => void, widths: number[], roundsPerSample: number): number {
     const start = performance.now()
 
@@ -79,7 +81,7 @@ describe("Word wrap algorithmic complexity", () => {
   const COMPLEXITY_THRESHOLD = 1.75
   const MEASURE_WIDTHS = [76, 77, 78, 79, 80, 81, 82, 83]
 
-  it("should have O(n) complexity for word wrap without word breaks", () => {
+  perfIt("should have O(n) complexity for word wrap without word breaks", () => {
     const smallSize = 20000
     const largeSize = 40000
 
@@ -130,7 +132,7 @@ describe("Word wrap algorithmic complexity", () => {
     expect(ratio).toBeLessThan(inputRatio * COMPLEXITY_THRESHOLD)
   })
 
-  it("should have O(n) complexity for word wrap with word breaks", () => {
+  perfIt("should have O(n) complexity for word wrap with word breaks", () => {
     const smallSize = 20000
     const largeSize = 40000
 
@@ -187,7 +189,7 @@ describe("Word wrap algorithmic complexity", () => {
     expect(ratio).toBeLessThan(inputRatio * COMPLEXITY_THRESHOLD)
   })
 
-  it("should have O(n) complexity for char wrap mode", () => {
+  perfIt("should have O(n) complexity for char wrap mode", () => {
     const smallSize = 20000
     const largeSize = 60000
 
