@@ -12,6 +12,7 @@ describe("TreeSitterClient", () => {
   let dataPath: string
 
   const sharedDataPath = join(tmpdir(), "tree-sitter-shared-test-data")
+  const windowsNodeTreeSitterTimeout = !process.versions.bun && process.platform === "win32" ? 30000 : 5000
 
   beforeAll(async () => {
     await mkdir(sharedDataPath, { recursive: true })
@@ -30,10 +31,14 @@ describe("TreeSitterClient", () => {
     }
   })
 
-  test("should initialize successfully", async () => {
-    await client.initialize()
-    expect(client.isInitialized()).toBe(true)
-  })
+  test(
+    "should initialize successfully",
+    async () => {
+      await client.initialize()
+      expect(client.isInitialized()).toBe(true)
+    },
+    windowsNodeTreeSitterTimeout,
+  )
 
   test("should preload parsers for supported filetypes", async () => {
     await client.initialize()

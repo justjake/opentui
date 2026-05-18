@@ -1955,12 +1955,15 @@ test("CodeRenderable - streaming with conceal and drawUnstyledText=false should 
 
   currentRenderer.root.add(codeRenderable)
 
-  const waitForHighlightingCycle = async (timeout = 2000) => {
-    const start = Date.now()
+  const waitForHighlightingCycle = async (timeout = 15000) => {
     await renderOnce()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    while (codeRenderable.isHighlighting && Date.now() - start < timeout) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    if (codeRenderable.isHighlighting) {
+      await Promise.race([
+        codeRenderable.highlightingDone,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Timed out waiting for code highlighting")), timeout),
+        ),
+      ])
     }
     await renderOnce()
   }

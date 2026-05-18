@@ -30,13 +30,15 @@ const syntaxStyle = SyntaxStyle.fromStyles({
   default: { fg: RGBA.fromValues(1, 1, 1, 1) },
 })
 
+const windowsNodeTreeSitterHookTimeout = !process.versions.bun && process.platform === "win32" ? 30000 : 10000
+
 beforeAll(async () => {
   const dataPath = join(tmpdir(), "tree-sitter-markdown-renderable-test-data")
   await mkdir(dataPath, { recursive: true })
 
   markdownTreeSitterClient = new TreeSitterClient({ dataPath })
   await markdownTreeSitterClient.initialize()
-})
+}, windowsNodeTreeSitterHookTimeout)
 
 beforeEach(async () => {
   const testRenderer = await createTestRenderer({ width: 60, height: 40 })
