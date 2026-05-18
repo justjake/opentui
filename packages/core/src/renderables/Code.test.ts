@@ -1090,7 +1090,7 @@ test("CodeRenderable - streaming mode with drawUnstyledText=false waits for new 
     keyword: { fg: RGBA.fromValues(0, 0, 1, 1) },
   })
 
-  const mockClient = new MockTreeSitterClient({ autoResolveTimeout: 10 })
+  const mockClient = new MockTreeSitterClient()
   mockClient.setMockResult({
     highlights: [[0, 5, "keyword"]] as SimpleHighlight[],
   })
@@ -1108,20 +1108,25 @@ test("CodeRenderable - streaming mode with drawUnstyledText=false waits for new 
   })
 
   currentRenderer.root.add(codeRenderable)
-  currentRenderer.start()
 
-  await sleep(30)
+  await renderOnce()
+  expect(mockClient.isHighlighting()).toBe(true)
 
+  mockClient.resolveHighlightOnce(0)
+  await codeRenderable.highlightingDone
+  await renderOnce()
   expect(codeRenderable.plainText).toBe("const initial = 'hello';")
 
   codeRenderable.content = "const updated = 'world';"
   expect(codeRenderable.plainText).toBe("const initial = 'hello';")
 
-  await sleep(30)
+  await renderOnce()
+  expect(mockClient.isHighlighting()).toBe(true)
 
+  mockClient.resolveHighlightOnce(0)
+  await codeRenderable.highlightingDone
+  await renderOnce()
   expect(codeRenderable.plainText).toBe("const updated = 'world';")
-
-  currentRenderer.stop()
 })
 
 test("CodeRenderable - onChunks callback can transform chunks when highlights are empty", async () => {
