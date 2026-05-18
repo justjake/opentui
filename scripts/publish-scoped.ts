@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url"
 interface PackageJson {
   name: string
   version: string
+  repository?: string | { type?: string; url?: string; directory?: string }
   optionalDependencies?: Record<string, string>
 }
 
@@ -25,6 +26,7 @@ interface Options {
   sourceScope: string
   targetScope: string
   packagePrefix: string
+  repositoryUrl: string
   packDestination?: string
   packOnly: boolean
   dryRun: boolean
@@ -66,6 +68,7 @@ function parseArgs(): Options {
     sourceScope: "@opentui",
     targetScope: process.env.NPM_SCOPE || "@jitl",
     packagePrefix: process.env.NPM_PACKAGE_PREFIX || "",
+    repositoryUrl: process.env.NPM_REPOSITORY_URL || "https://github.com/justjake/opentui",
     packDestination: process.env.NPM_PACK_DESTINATION,
     packOnly: false,
     dryRun: process.env.DRY_RUN === "true",
@@ -154,6 +157,16 @@ function parseArgs(): Options {
       continue
     }
 
+    if (arg === "--repository-url") {
+      options.repositoryUrl = args[++i] ?? ""
+      continue
+    }
+
+    if (arg.startsWith("--repository-url=")) {
+      options.repositoryUrl = arg.slice("--repository-url=".length)
+      continue
+    }
+
     if (arg === "--access") {
       options.access = args[++i] ?? ""
       continue
@@ -176,6 +189,7 @@ function parseArgs(): Options {
           "  --tag <tag>              npm dist-tag for publish.",
           "  --pack-destination <dir> Create npm tarballs in this directory before publishing.",
           "  --pack-only              Stage and pack packages without publishing.",
+          "  --repository-url <url>   Repository URL for staged package.json files.",
           "  --dry-run                Run npm publish --dry-run.",
           "  --keep-stage             Keep the staged rewritten package directory.",
           "  --skip-existing          Skip packages whose exact version already exists on npm.",
@@ -193,6 +207,9 @@ function parseArgs(): Options {
   validatePackagePrefix(options.packagePrefix)
   if (!options.access) {
     throw new Error("Missing npm access")
+  }
+  if (!options.repositoryUrl) {
+    throw new Error("Missing repository URL")
   }
   if (options.packOnly && !options.packDestination) {
     throw new Error("--pack-only requires --pack-destination")
@@ -286,6 +303,23 @@ function prependReadmeNotice(packageDir: string): void {
   writeFileSync(readmePath, `${README_NOTICE}${original}`)
 }
 
+function updatePackageJsonMetadata(packageDir: string, options: Options): void {
+  const packageJsonPath = join(packageDir, "package.json")
+  const packageJson = readPackageJson(packageDir)
+
+  if (typeof packageJson.repository === "string") {
+    packageJson.repository = options.repositoryUrl
+  } else {
+    packageJson.repository = {
+      ...(packageJson.repository ?? {}),
+      type: packageJson.repository?.type ?? "git",
+      url: options.repositoryUrl,
+    }
+  }
+
+  writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`)
+}
+
 function collectPackages(stageRoot: string, options: Options): PublishPackage[] {
   const packageRoots = PUBLISHED_PACKAGE_DIRS.map((packageDirName) => ({
     packageDirName,
@@ -327,6 +361,7 @@ function collectPackages(stageRoot: string, options: Options): PublishPackage[] 
     const stageDir = join(stageRoot, packageDirName)
     cpSync(sourceDir, stageDir, { recursive: true })
     rewriteTextFiles(stageDir, options)
+    updatePackageJsonMetadata(stageDir, options)
     prependReadmeNotice(stageDir)
     assertNoSourceScopeReferences(stageDir, options.sourceScope)
 
