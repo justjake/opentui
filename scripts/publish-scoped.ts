@@ -1,5 +1,15 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process"
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, extname, join, resolve } from "node:path"
 import process from "node:process"
@@ -14,6 +24,9 @@ interface PackageJson {
 interface Options {
   sourceScope: string
   targetScope: string
+  packagePrefix: string
+  packDestination?: string
+  packOnly: boolean
   dryRun: boolean
   keepStage: boolean
   skipExisting: boolean
@@ -26,6 +39,13 @@ interface PublishPackage {
   version: string
   sourceDir: string
   stageDir: string
+  tarballPath?: string
+}
+
+interface PackedPackage {
+  name: string
+  version: string
+  filename: string
 }
 
 const __filename = fileURLToPath(import.meta.url)
@@ -34,11 +54,20 @@ const rootDir = resolve(__dirname, "..")
 
 const PUBLISHED_PACKAGE_DIRS = ["core", "react", "solid"] as const
 const TEXT_EXTENSIONS = new Set([".cjs", ".css", ".d.ts", ".js", ".json", ".map", ".md", ".mjs", ".ts", ".txt"])
+const README_NOTICE = [
+  "> Experimental build of OpenTUI for Node.js from [github.com/justjake/opentui](https://github.com/justjake/opentui).",
+  ">",
+  "> Published under `@jitl/*` until the Node.js support branch is upstreamed.",
+  "",
+].join("\n")
 
 function parseArgs(): Options {
   const options: Options = {
     sourceScope: "@opentui",
     targetScope: process.env.NPM_SCOPE || "@jitl",
+    packagePrefix: process.env.NPM_PACKAGE_PREFIX || "",
+    packDestination: process.env.NPM_PACK_DESTINATION,
+    packOnly: false,
     dryRun: process.env.DRY_RUN === "true",
     keepStage: false,
     skipExisting: false,
@@ -90,6 +119,16 @@ function parseArgs(): Options {
       continue
     }
 
+    if (arg === "--package-prefix") {
+      options.packagePrefix = args[++i] ?? ""
+      continue
+    }
+
+    if (arg.startsWith("--package-prefix=")) {
+      options.packagePrefix = arg.slice("--package-prefix=".length)
+      continue
+    }
+
     if (arg === "--tag") {
       options.tag = args[++i]
       continue
@@ -97,6 +136,21 @@ function parseArgs(): Options {
 
     if (arg.startsWith("--tag=")) {
       options.tag = arg.slice("--tag=".length)
+      continue
+    }
+
+    if (arg === "--pack-destination") {
+      options.packDestination = args[++i]
+      continue
+    }
+
+    if (arg.startsWith("--pack-destination=")) {
+      options.packDestination = arg.slice("--pack-destination=".length)
+      continue
+    }
+
+    if (arg === "--pack-only" || arg === "--no-publish") {
+      options.packOnly = true
       continue
     }
 
@@ -118,7 +172,10 @@ function parseArgs(): Options {
           "Options:",
           "  --scope <scope>          Target npm scope. Defaults to @jitl or NPM_SCOPE.",
           "  --source-scope <scope>   Source npm scope to rewrite. Defaults to @opentui.",
+          "  --package-prefix <text>  Prefix for unscoped package names. Example: opentui-.",
           "  --tag <tag>              npm dist-tag for publish.",
+          "  --pack-destination <dir> Create npm tarballs in this directory before publishing.",
+          "  --pack-only              Stage and pack packages without publishing.",
           "  --dry-run                Run npm publish --dry-run.",
           "  --keep-stage             Keep the staged rewritten package directory.",
           "  --skip-existing          Skip packages whose exact version already exists on npm.",
@@ -133,8 +190,12 @@ function parseArgs(): Options {
 
   validateScope(options.sourceScope, "source scope")
   validateScope(options.targetScope, "target scope")
+  validatePackagePrefix(options.packagePrefix)
   if (!options.access) {
     throw new Error("Missing npm access")
+  }
+  if (options.packOnly && !options.packDestination) {
+    throw new Error("--pack-only requires --pack-destination")
   }
 
   return options
@@ -143,6 +204,12 @@ function parseArgs(): Options {
 function validateScope(scope: string, label: string): void {
   if (!/^@[a-z0-9][a-z0-9._-]*$/i.test(scope)) {
     throw new Error(`Invalid ${label}: ${scope}`)
+  }
+}
+
+function validatePackagePrefix(packagePrefix: string): void {
+  if (packagePrefix && !/^[a-z0-9][a-z0-9._-]*$/i.test(packagePrefix)) {
+    throw new Error(`Invalid package prefix: ${packagePrefix}`)
   }
 }
 
@@ -164,12 +231,12 @@ function shouldRewriteFile(filePath: string): boolean {
   return TEXT_EXTENSIONS.has(ext) || basename(filePath) === "LICENSE"
 }
 
-function rewriteTextFiles(dir: string, sourceScope: string, targetScope: string): void {
+function rewriteTextFiles(dir: string, options: Options): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const entryPath = join(dir, entry.name)
 
     if (entry.isDirectory()) {
-      rewriteTextFiles(entryPath, sourceScope, targetScope)
+      rewriteTextFiles(entryPath, options)
       continue
     }
 
@@ -178,7 +245,7 @@ function rewriteTextFiles(dir: string, sourceScope: string, targetScope: string)
     }
 
     const original = readFileSync(entryPath, "utf8")
-    const rewritten = original.replaceAll(`${sourceScope}/`, `${targetScope}/`)
+    const rewritten = original.replaceAll(`${options.sourceScope}/`, `${options.targetScope}/${options.packagePrefix}`)
 
     if (rewritten !== original) {
       writeFileSync(entryPath, rewritten)
@@ -203,6 +270,20 @@ function assertNoSourceScopeReferences(dir: string, sourceScope: string): void {
       throw new Error(`Staged package still references ${sourceScope}/ in ${entryPath}`)
     }
   }
+}
+
+function prependReadmeNotice(packageDir: string): void {
+  const readmePath = join(packageDir, "README.md")
+  if (!existsSync(readmePath)) {
+    return
+  }
+
+  const original = readFileSync(readmePath, "utf8")
+  if (original.startsWith(README_NOTICE)) {
+    return
+  }
+
+  writeFileSync(readmePath, `${README_NOTICE}${original}`)
 }
 
 function collectPackages(stageRoot: string, options: Options): PublishPackage[] {
@@ -245,7 +326,8 @@ function collectPackages(stageRoot: string, options: Options): PublishPackage[] 
   return packageRootsInPublishOrder.map(({ packageDirName, sourceDir }) => {
     const stageDir = join(stageRoot, packageDirName)
     cpSync(sourceDir, stageDir, { recursive: true })
-    rewriteTextFiles(stageDir, options.sourceScope, options.targetScope)
+    rewriteTextFiles(stageDir, options)
+    prependReadmeNotice(stageDir)
     assertNoSourceScopeReferences(stageDir, options.sourceScope)
 
     const packageJson = readPackageJson(stageDir)
@@ -287,6 +369,55 @@ function runNpm(args: string[], cwd: string, stageRoot: string, npmUserConfig?: 
     env: npmEnv(stageRoot, npmUserConfig),
     stdio: "inherit",
   })
+}
+
+function packPackage(pkg: PublishPackage, packDestination: string, stageRoot: string, npmUserConfig?: string): string {
+  mkdirSync(packDestination, { recursive: true })
+
+  const result = spawnSync("npm", ["pack", pkg.stageDir, "--pack-destination", packDestination, "--json"], {
+    cwd: stageRoot,
+    env: npmEnv(stageRoot, npmUserConfig),
+  })
+
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout)
+    process.stderr.write(result.stderr)
+    throw new Error(`Failed to pack ${pkg.name}@${pkg.version}`)
+  }
+
+  const output = result.stdout.toString().trim()
+  const packed = JSON.parse(output) as Array<{ filename: string }>
+  const filename = packed[0]?.filename
+  if (!filename) {
+    throw new Error(`npm pack did not report a tarball for ${pkg.name}@${pkg.version}`)
+  }
+
+  const tarballPath = resolve(packDestination, filename)
+  console.log(`  - ${pkg.name}@${pkg.version} -> ${tarballPath}`)
+  return tarballPath
+}
+
+function packPackages(
+  packages: PublishPackage[],
+  packDestination: string,
+  stageRoot: string,
+  npmUserConfig?: string,
+): void {
+  const destination = resolve(packDestination)
+  console.log(`\nCreating npm tarballs in ${destination}`)
+
+  const manifest: PackedPackage[] = []
+  for (const pkg of packages) {
+    const tarballPath = packPackage(pkg, destination, stageRoot, npmUserConfig)
+    pkg.tarballPath = tarballPath
+    manifest.push({
+      name: pkg.name,
+      version: pkg.version,
+      filename: basename(tarballPath),
+    })
+  }
+
+  writeFileSync(join(destination, "publish-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
 }
 
 function verifyNpmAuth(stageRoot: string, npmUserConfig?: string): void {
@@ -341,7 +472,8 @@ function publishPackage(pkg: PublishPackage, options: Options, stageRoot: string
     }
   }
 
-  const publishArgs = ["publish", "--access", options.access]
+  const publishTarget = pkg.tarballPath ?? pkg.stageDir
+  const publishArgs = ["publish", publishTarget, "--access", options.access]
   if (options.tag) {
     publishArgs.push("--tag", options.tag)
   }
@@ -349,7 +481,7 @@ function publishPackage(pkg: PublishPackage, options: Options, stageRoot: string
     publishArgs.push("--dry-run")
   }
 
-  const publish = runNpm(publishArgs, pkg.stageDir, stageRoot, npmUserConfig)
+  const publish = runNpm(publishArgs, stageRoot, stageRoot, npmUserConfig)
   if (publish.status !== 0) {
     throw new Error(`Failed to ${options.dryRun ? "dry-run publish" : "publish"} ${pkg.name}@${pkg.version}`)
   }
@@ -371,6 +503,15 @@ function main(): void {
         throw new Error(`Package source is not a directory: ${pkg.sourceDir}`)
       }
       console.log(`  - ${pkg.name}@${pkg.version}`)
+    }
+
+    if (options.packDestination) {
+      packPackages(packages, options.packDestination, stageRoot, npmUserConfig)
+    }
+
+    if (options.packOnly) {
+      console.log(`\nPacked ${packages.length} packages.`)
+      return
     }
 
     if (!options.dryRun) {

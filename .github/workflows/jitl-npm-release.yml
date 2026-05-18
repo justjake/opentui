@@ -23,19 +23,22 @@ permissions:
 env:
   ZIG_VERSION: 0.15.2
   NPM_SCOPE: "@jitl"
+  NPM_PACKAGE_PREFIX: "opentui-"
 
 jobs:
-  publish:
-    name: Publish @jitl packages
+  build_tarballs:
+    name: Test, build, create tarballs
     if: github.repository == 'justjake/opentui'
     runs-on: macos-latest
-    concurrency:
-      group: npm-publish-${{ github.repository }}-${{ github.ref_name }}
-      cancel-in-progress: false
-    environment: npm-publish
+    outputs:
+      mode: ${{ steps.publish_plan.outputs.mode }}
+      version: ${{ steps.publish_plan.outputs.version }}
+      npm_tag: ${{ steps.publish_plan.outputs.npm_tag }}
+      dry_run: ${{ steps.publish_plan.outputs.dry_run }}
+      package_name: ${{ steps.publish_plan.outputs.package_name }}
+      url: ${{ steps.publish_plan.outputs.url }}
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout code
@@ -63,7 +66,7 @@ jobs:
 
           source_version="$(bun -e "console.log(require('./packages/core/package.json').version)")"
           manual_version="${{ inputs.version }}"
-          package_name="${NPM_SCOPE}/core"
+          package_name="${NPM_SCOPE}/${NPM_PACKAGE_PREFIX}core"
           short_sha="${GITHUB_SHA::7}"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${manual_version}" ]; then
@@ -81,6 +84,7 @@ jobs:
           emit() {
             {
               echo "mode=$1"
+              echo "package_name=${package_name}"
               echo "version=$2"
               echo "npm_tag=$3"
               echo "dry_run=${dry_run}"
@@ -132,35 +136,145 @@ jobs:
           cd ../react
           bun run build
 
-      - name: Publish scoped packages
+      - name: Test package artifacts
         if: steps.publish_plan.outputs.mode != 'skip'
         run: |
           set -euo pipefail
 
-          DRY_RUN_ARG=""
-          if [ "${{ steps.publish_plan.outputs.dry_run }}" = "true" ]; then
-            DRY_RUN_ARG="--dry-run"
-          fi
+          cd packages/core
+          bun run test:native
+          bun run test:bun
+          bun run test:nodejs
+
+          cd ../solid
+          bun run test:bun
+          bun run test:nodejs
+
+          cd ../react
+          bun run test:bun
+          bun run test:nodejs
+
+          cd ../..
+          bun run test:dist
+
+      - name: Create npm tarballs
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: |
+          set -euo pipefail
+
+          mkdir -p npm-tarballs
 
           bun scripts/publish-scoped.ts \
             --scope "$NPM_SCOPE" \
+            --package-prefix "$NPM_PACKAGE_PREFIX" \
             --tag "${{ steps.publish_plan.outputs.npm_tag }}" \
+            --skip-existing \
+            --pack-destination npm-tarballs \
+            --pack-only
+
+      - name: Upload npm tarballs
+        if: steps.publish_plan.outputs.mode != 'skip'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jitl-npm-tarballs
+          path: npm-tarballs/*
+          if-no-files-found: error
+
+  smoke_tarballs:
+    name: Install tarballs with npm only
+    needs: build_tarballs
+    if: needs.build_tarballs.outputs.mode != 'skip'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Assert Bun is unavailable
+        run: |
+          if command -v bun >/dev/null 2>&1; then
+            echo "This smoke test must run without Bun on PATH."
+            exit 1
+          fi
+
+      - name: Download npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: jitl-npm-tarballs
+          path: npm-tarballs
+
+      - name: Install and smoke-test tarballs
+        run: node scripts/smoke-test-tarballs.mjs npm-tarballs --scope "$NPM_SCOPE" --package-prefix "$NPM_PACKAGE_PREFIX"
+
+  publish:
+    name: Publish @jitl packages
+    needs:
+      - build_tarballs
+      - smoke_tarballs
+    if: needs.build_tarballs.outputs.mode != 'skip' && github.repository == 'justjake/opentui'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: npm-publish-${{ github.repository }}-${{ github.ref_name }}
+      cancel-in-progress: false
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: jitl-npm-tarballs
+          path: npm-tarballs
+
+      - name: Publish scoped tarballs
+        run: |
+          set -euo pipefail
+
+          DRY_RUN_ARG=""
+          if [ "${{ needs.build_tarballs.outputs.dry_run }}" = "true" ]; then
+            DRY_RUN_ARG="--dry-run"
+          fi
+
+          node scripts/publish-tarballs.mjs \
+            npm-tarballs \
+            --tag "${{ needs.build_tarballs.outputs.npm_tag }}" \
             --skip-existing \
             $DRY_RUN_ARG
 
       - name: Report publish
-        if: steps.publish_plan.outputs.mode != 'skip'
         run: |
           {
-            echo "### Published \`${NPM_SCOPE}/*@${{ steps.publish_plan.outputs.version }}\`"
+            echo "### Published \`${NPM_SCOPE}/*@${{ needs.build_tarballs.outputs.version }}\`"
             echo ""
-            echo "- npm tag: \`${{ steps.publish_plan.outputs.npm_tag }}\`"
-            echo "- dry run: \`${{ steps.publish_plan.outputs.dry_run }}\`"
-            echo "- core package: ${{ steps.publish_plan.outputs.url }}"
+            echo "- npm tag: \`${{ needs.build_tarballs.outputs.npm_tag }}\`"
+            echo "- dry run: \`${{ needs.build_tarballs.outputs.dry_run }}\`"
+            echo "- core package: ${{ needs.build_tarballs.outputs.url }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  report_skip:
+    name: Report skipped publish
+    needs: build_tarballs
+    if: needs.build_tarballs.outputs.mode == 'skip'
+    runs-on: ubuntu-latest
+    steps:
       - name: Report skip
-        if: steps.publish_plan.outputs.mode == 'skip'
         run: |
-          echo "Skipped publish; ${{ steps.publish_plan.outputs.url }} already exists."
-          echo "::notice title=Skipped publish (already on npm)::${{ steps.publish_plan.outputs.url }}"
+          echo "Skipped publish; ${{ needs.build_tarballs.outputs.url }} already exists."
+          echo "::notice title=Skipped publish (already on npm)::${{ needs.build_tarballs.outputs.url }}"

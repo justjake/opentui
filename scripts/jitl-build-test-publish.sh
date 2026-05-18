@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 SCOPE="${NPM_SCOPE:-@jitl}"
 SOURCE_SCOPE="${SOURCE_NPM_SCOPE:-@opentui}"
+PACKAGE_PREFIX="${NPM_PACKAGE_PREFIX:-opentui-}"
 VERSION="${VERSION:-}"
 TAG="${NPM_TAG:-}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -17,11 +18,12 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/jitl-build-test-publish.sh [options]
 
-Build, test, and publish the current checkout as @jitl/* packages using local npm auth.
+Build, test, pack, smoke-test, and publish the current checkout as @jitl/* packages using local npm auth.
 
 Options:
   --version <version>       Publish this exact version instead of planning one from npm.
   --scope <scope>           Target npm scope. Defaults to @jitl or NPM_SCOPE.
+  --package-prefix <text>   Prefix for package names. Defaults to opentui- or NPM_PACKAGE_PREFIX.
   --tag <tag>               npm dist-tag. Defaults to latest for new base versions, next for SHA versions.
   --dry-run                 Build and run npm publish --dry-run.
   --skip-tests              Build and publish without running tests.
@@ -30,7 +32,7 @@ Options:
   -h, --help                Show this help.
 
 Environment equivalents:
-  VERSION, NPM_SCOPE, NPM_TAG, DRY_RUN=true, SKIP_TESTS=true,
+  VERSION, NPM_SCOPE, NPM_PACKAGE_PREFIX, NPM_TAG, DRY_RUN=true, SKIP_TESTS=true,
   KEEP_VERSION_CHANGES=true, SKIP_EXISTING=false
 USAGE
 }
@@ -51,6 +53,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --scope=*)
       SCOPE="${1#--scope=}"
+      shift
+      ;;
+    --package-prefix)
+      PACKAGE_PREFIX="${2:-}"
+      shift 2
+      ;;
+    --package-prefix=*)
+      PACKAGE_PREFIX="${1#--package-prefix=}"
       shift
       ;;
     --tag)
@@ -94,7 +104,12 @@ if [[ ! "${SCOPE}" =~ ^@[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
   exit 1
 fi
 
-for tool in bun git npm zig; do
+if [[ -n "${PACKAGE_PREFIX}" && ! "${PACKAGE_PREFIX}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+  echo "Invalid npm package prefix: ${PACKAGE_PREFIX}" >&2
+  exit 1
+fi
+
+for tool in bun git node npm zig; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     echo "Missing required tool: ${tool}" >&2
     exit 1
@@ -103,6 +118,7 @@ done
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opentui-jitl-publish.XXXXXX")"
 BACKUP_DIR="${TMP_DIR}/backup"
+TARBALL_DIR="${TMP_DIR}/npm-tarballs"
 mkdir -p "${BACKUP_DIR}"
 export NPM_CONFIG_CACHE="${TMP_DIR}/npm-cache"
 
@@ -154,9 +170,10 @@ fi
 
 BASE_VERSION="$(bun -e "console.log(require('./packages/core/package.json').version)")"
 SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+PLAN_PACKAGE_NAME="${SCOPE}/${PACKAGE_PREFIX}core"
 
 if [[ -z "${VERSION}" ]]; then
-  if npm view "${SCOPE}/core@${BASE_VERSION}" version >/dev/null 2>&1; then
+  if npm view "${PLAN_PACKAGE_NAME}@${BASE_VERSION}" version >/dev/null 2>&1; then
     VERSION="$(bun -e "
       const base = process.argv[1]
       const sha = process.argv[2]
@@ -174,6 +191,7 @@ fi
 echo "Publishing plan:"
 echo "  scope: ${SCOPE}"
 echo "  source scope: ${SOURCE_SCOPE}"
+echo "  package prefix: ${PACKAGE_PREFIX}"
 echo "  version: ${VERSION}"
 echo "  npm tag: ${TAG}"
 echo "  dry run: ${DRY_RUN}"
@@ -227,16 +245,35 @@ PUBLISH_ARGS=(
   "${SCOPE}"
   "--source-scope"
   "${SOURCE_SCOPE}"
+  "--package-prefix"
+  "${PACKAGE_PREFIX}"
   "--tag"
   "${TAG}"
 )
-
-if [[ "${DRY_RUN}" == "true" ]]; then
-  PUBLISH_ARGS+=("--dry-run")
-fi
 
 if [[ "${SKIP_EXISTING}" == "true" ]]; then
   PUBLISH_ARGS+=("--skip-existing")
 fi
 
-bun "${PUBLISH_ARGS[@]}"
+bun "${PUBLISH_ARGS[@]}" --pack-destination "${TARBALL_DIR}" --pack-only
+
+if [[ "${SKIP_TESTS}" != "true" ]]; then
+  node scripts/smoke-test-tarballs.mjs "${TARBALL_DIR}" --scope "${SCOPE}" --package-prefix "${PACKAGE_PREFIX}"
+fi
+
+PUBLISH_TARBALL_ARGS=(
+  "scripts/publish-tarballs.mjs"
+  "${TARBALL_DIR}"
+  "--tag"
+  "${TAG}"
+)
+
+if [[ "${DRY_RUN}" == "true" ]]; then
+  PUBLISH_TARBALL_ARGS+=("--dry-run")
+fi
+
+if [[ "${SKIP_EXISTING}" == "true" ]]; then
+  PUBLISH_TARBALL_ARGS+=("--skip-existing")
+fi
+
+node "${PUBLISH_TARBALL_ARGS[@]}"
