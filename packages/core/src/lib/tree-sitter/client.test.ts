@@ -5,6 +5,7 @@ import { join } from "path"
 import { mkdir, writeFile, unlink } from "fs/promises"
 import { getDataPaths } from "../data-paths.js"
 import { getTreeSitterClient } from "./index.js"
+import { fileURLToPath } from "url"
 
 describe("TreeSitterClient", () => {
   let client: TreeSitterClient
@@ -380,6 +381,7 @@ describe("TreeSitterClient", () => {
 
   test("should support local file paths for parser configuration", async () => {
     const testQueryPath = join(dataPath, `test-highlights-${Date.now()}.scm`)
+    const testWasmPath = fileURLToPath(new URL("./assets/javascript/tree-sitter-javascript.wasm", import.meta.url))
     const simpleQuery = "(identifier) @variable"
     await writeFile(testQueryPath, simpleQuery, "utf8")
 
@@ -390,7 +392,7 @@ describe("TreeSitterClient", () => {
         queries: {
           highlights: [testQueryPath],
         },
-        wasm: "https://github.com/tree-sitter/tree-sitter-javascript/releases/download/v0.23.1/tree-sitter-javascript.wasm",
+        wasm: testWasmPath,
       })
 
       await client.initialize()
