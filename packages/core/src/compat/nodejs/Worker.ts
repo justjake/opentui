@@ -9,11 +9,20 @@ type ErrorEventLike = { message: string }
 const ownExtension = extname(import.meta.url)
 const knownProtocolRegex = /^(file|data|node):/
 const windowsDriveProtocolRegex = /^[a-zA-Z]:$/
+const windowsAbsolutePathRegex = /^[a-zA-Z]:[\\/]/
+
+function pathLikeToFileURL(path: string): string {
+  if (windowsAbsolutePathRegex.test(path)) {
+    return new URL(`file:///${path.replace(/\\/g, "/")}`).href
+  }
+
+  return pathToFileURL(path).href
+}
 
 export function resolveWorkerTarget(url: string | URL): string {
   if (url instanceof URL) {
     if (windowsDriveProtocolRegex.test(url.protocol)) {
-      return pathToFileURL(url.href).href
+      return pathLikeToFileURL(url.href)
     }
     return url.href
   }
@@ -24,7 +33,7 @@ export function resolveWorkerTarget(url: string | URL): string {
     return url
   }
 
-  return pathToFileURL(url).href
+  return pathLikeToFileURL(url)
 }
 
 function normalizeExtension(specifier: string): string

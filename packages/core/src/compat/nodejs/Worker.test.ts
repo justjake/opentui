@@ -15,13 +15,14 @@ describe("Node.js Worker compatibility", () => {
     expect(resolveWorkerTarget(targetPath)).toBe(pathToFileURL(targetPath).href)
   })
 
-  it("converts Windows drive-letter URL objects to file URLs", () => {
-    if (process.platform !== "win32") {
-      return
-    }
+  it("converts Windows drive-letter paths to file URLs on all platforms", () => {
+    expect(resolveWorkerTarget("D:\\a\\open tui\\parser.worker.js")).toBe("file:///D:/a/open%20tui/parser.worker.js")
+    expect(resolveWorkerTarget("D:/a/open tui/parser.worker.js")).toBe("file:///D:/a/open%20tui/parser.worker.js")
+  })
 
+  it("converts Windows drive-letter URL objects to file URLs", () => {
     const targetUrl = new URL("D:/a/opentui/parser.worker.js")
 
-    expect(resolveWorkerTarget(targetUrl)).toBe(pathToFileURL(targetUrl.href).href)
+    expect(resolveWorkerTarget(targetUrl)).toBe("file:///d:/a/opentui/parser.worker.js")
   })
 })
