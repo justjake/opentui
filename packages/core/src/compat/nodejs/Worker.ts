@@ -36,6 +36,14 @@ export function resolveWorkerTarget(url: string | URL): string {
   return pathLikeToFileURL(url)
 }
 
+export function resolveWorkerEntrypoint(url: string | URL): string | URL {
+  const target = resolveWorkerTarget(url)
+  if (knownProtocolRegex.test(target)) {
+    return new URL(target)
+  }
+  return target
+}
+
 function normalizeExtension(specifier: string): string
 function normalizeExtension(specifier: URL): URL
 function normalizeExtension(specifier: string | URL): string | URL {
@@ -67,14 +75,14 @@ export class Worker extends NodeWorker {
     let execArgv = process.execArgv
     if (import.meta.url.endsWith(".ts")) {
       registerJs ??= normalizeExtension(new URL("./registerResolveJs.js", import.meta.url))
-      const registerJsArg = `--import=${fileURLToPath(registerJs)}`
+      const registerJsArg = `--import=${fileURLToPath(resolveWorkerTarget(registerJs))}`
       if (!execArgv.includes(registerJsArg)) {
         execArgv = [...execArgv, registerJsArg]
       }
     }
 
     trampoline ??= normalizeExtension(new URL("./trampoline.worker.js", import.meta.url))
-    super(trampoline, {
+    super(resolveWorkerEntrypoint(trampoline), {
       workerData: {
         targetUrl: resolveWorkerTarget(url),
       },

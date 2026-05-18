@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { pathToFileURL } from "node:url"
-import { resolveWorkerTarget } from "./Worker.js"
+import { resolveWorkerEntrypoint, resolveWorkerTarget } from "./Worker.js"
 
 describe("Node.js Worker compatibility", () => {
   it("keeps supported worker URL schemes", () => {
@@ -24,5 +24,12 @@ describe("Node.js Worker compatibility", () => {
     const targetUrl = new URL("D:/a/opentui/parser.worker.js")
 
     expect(resolveWorkerTarget(targetUrl)).toBe("file:///d:/a/opentui/parser.worker.js")
+  })
+
+  it("wraps file URL worker entrypoints for Node.js Worker", () => {
+    const entrypoint = resolveWorkerEntrypoint(new URL("D:/a/opentui/trampoline.worker.js"))
+
+    expect(entrypoint).toBeInstanceOf(URL)
+    expect(String(entrypoint)).toBe("file:///d:/a/opentui/trampoline.worker.js")
   })
 })
