@@ -1,11 +1,15 @@
 import { describe, expect, it } from "bun:test"
+import { spawnSync } from "../compat/testHelpers.js"
 import { join } from "node:path"
 
-describe("runtime plugin support", () => {
+// Fixtures require `import { plugin } from "bun"` — no Node.js equivalent.
+const _describe = process.versions.bun ? describe : describe.skip
+
+_describe("runtime plugin support", () => {
   it("installs exactly once via drop-in module", () => {
-    const fixturePath = join(import.meta.dir, "runtime-plugin-support.fixture.ts")
-    const result = Bun.spawnSync([process.execPath, fixturePath], {
-      cwd: join(import.meta.dir, "..", ".."),
+    const fixturePath = join(import.meta.dirname, "runtime-plugin-support.fixture.ts")
+    const result = spawnSync([process.execPath, fixturePath], {
+      cwd: join(import.meta.dirname, "..", ".."),
       stdout: "pipe",
       stderr: "pipe",
       env: process.env,

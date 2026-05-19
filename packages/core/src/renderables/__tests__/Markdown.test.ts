@@ -1,4 +1,5 @@
 import { test, expect, beforeAll, beforeEach, afterEach, afterAll } from "bun:test"
+import { sleep } from "../../compat/runtime.js"
 import { MarkdownRenderable, type MarkdownOptions } from "../Markdown.js"
 import { CodeRenderable } from "../Code.js"
 import { TextRenderable } from "../Text.js"
@@ -29,13 +30,15 @@ const syntaxStyle = SyntaxStyle.fromStyles({
   default: { fg: RGBA.fromValues(1, 1, 1, 1) },
 })
 
+const windowsNodeTreeSitterHookTimeout = !process.versions.bun && process.platform === "win32" ? 30000 : 10000
+
 beforeAll(async () => {
   const dataPath = join(tmpdir(), "tree-sitter-markdown-renderable-test-data")
   await mkdir(dataPath, { recursive: true })
 
   markdownTreeSitterClient = new TreeSitterClient({ dataPath })
   await markdownTreeSitterClient.initialize()
-})
+}, windowsNodeTreeSitterHookTimeout)
 
 beforeEach(async () => {
   const testRenderer = await createTestRenderer({ width: 60, height: 40 })
@@ -74,7 +77,7 @@ async function renderMarkdownRenderable(md: MarkdownRenderable, timeoutMs: numbe
   await renderOnce()
 
   while (hasPendingMarkdownParagraphHighlights() && Date.now() - startedAt < timeoutMs) {
-    await Bun.sleep(10)
+    await sleep(10)
     await renderOnce()
   }
 
@@ -780,7 +783,7 @@ test("code block concealment is disabled by default", async () => {
   expect(mockTreeSitterClient.isHighlighting()).toBe(true)
 
   mockTreeSitterClient.resolveAllHighlightOnce()
-  await Bun.sleep(10)
+  await sleep(10)
   await renderer.idle()
 
   const frame = captureFrame()
@@ -807,7 +810,7 @@ test("code block concealment can be enabled with concealCode", async () => {
   expect(mockTreeSitterClient.isHighlighting()).toBe(true)
 
   mockTreeSitterClient.resolveAllHighlightOnce()
-  await Bun.sleep(10)
+  await sleep(10)
   await renderer.idle()
 
   const frame = captureFrame()
@@ -835,7 +838,7 @@ test("toggling concealCode updates existing code block renderables", async () =>
   expect(mockTreeSitterClient.isHighlighting()).toBe(true)
 
   mockTreeSitterClient.resolveAllHighlightOnce()
-  await Bun.sleep(10)
+  await sleep(10)
   await renderer.idle()
 
   const frameBefore = captureFrame()
@@ -847,7 +850,7 @@ test("toggling concealCode updates existing code block renderables", async () =>
   expect(mockTreeSitterClient.isHighlighting()).toBe(true)
 
   mockTreeSitterClient.resolveAllHighlightOnce()
-  await Bun.sleep(10)
+  await sleep(10)
   await renderer.idle()
 
   const frameAfter = captureFrame()
@@ -1455,7 +1458,7 @@ test("streaming code blocks with concealCode=true do not flash unconcealed markd
   expect(mockTreeSitterClient.isHighlighting()).toBe(true)
 
   mockTreeSitterClient.resolveAllHighlightOnce()
-  await Bun.sleep(10)
+  await sleep(10)
   await renderer.idle()
 
   recorder.stop()

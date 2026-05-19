@@ -23,15 +23,16 @@
     "bench:text-table": "bun src/benchmark/text-table-benchmark.ts",
     "bench:ts": "bun src/benchmark/native-span-feed-benchmark.ts --suite=quick --json=src/benchmark/latest-quick-bench-run.json && bun src/benchmark/native-span-feed-benchmark.ts --suite=default --json=src/benchmark/latest-default-bench-run.json && bun src/benchmark/native-span-feed-benchmark.ts --suite=large --json=src/benchmark/latest-large-bench-run.json && bun src/benchmark/native-span-feed-benchmark.ts --suite=all --json=src/benchmark/latest-all-bench-run.json && bun src/benchmark/native-span-feed-async-benchmark.ts --json=src/benchmark/latest-async-bench-run.json",
     "publish": "bun scripts/publish.ts",
-    "test:js": "bun test",
-    "test": "bun run test:native && bun run test:js"
+    "test:bun": "bun test",
+    "test:nodejs": "npx vitest run",
+    "test:dist": "bun ../../scripts/dist-test.ts ./dist-test/*",
+    "test": "bun run test:native && bun run test:bun && bun run test:nodejs && bun run test:dist"
   },
   "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^24.0.0",
     "@types/three": "0.177.0",
-    "commander": "^13.1.0",
     "typescript": "^5",
     "web-tree-sitter": "0.25.10"
   },
@@ -40,6 +41,8 @@
     "diff": "8.0.2",
     "jimp": "1.6.0",
     "marked": "17.0.1",
+    "string-width": "8.2.0",
+    "strip-ansi": "7.2.0",
     "yoga-layout": "3.2.1"
   },
   "peerDependencies": {
@@ -47,15 +50,17 @@
   },
   "optionalDependencies": {
     "@dimforge/rapier2d-simd-compat": "^0.17.3",
+    "@opentui/core-darwin-arm64": "0.1.97",
+    "@opentui/core-darwin-x64": "0.1.97",
+    "@opentui/core-linux-arm64": "0.1.97",
+    "@opentui/core-linux-x64": "0.1.97",
+    "@opentui/core-win32-arm64": "0.1.97",
+    "@opentui/core-win32-x64": "0.1.97",
     "bun-webgpu": "0.1.5",
+    "koffi": "2.15.6",
     "planck": "^1.4.2",
     "three": "0.177.0",
-    "@opentui/core-darwin-x64": "0.1.97",
-    "@opentui/core-darwin-arm64": "0.1.97",
-    "@opentui/core-linux-x64": "0.1.97",
-    "@opentui/core-linux-arm64": "0.1.97",
-    "@opentui/core-win32-x64": "0.1.97",
-    "@opentui/core-win32-arm64": "0.1.97"
+    "unsafe-pointer": "0.2.0"
   },
   "exports": {
     ".": {
@@ -69,6 +74,14 @@
     "./testing": {
       "types": "./src/testing.ts",
       "import": "./src/testing.ts"
+    },
+    "./compat/runtime": {
+      "types": "./src/compat/runtime.ts",
+      "import": "./src/compat/runtime.ts"
+    },
+    "./compat/testHelpers": {
+      "types": "./src/compat/testHelpers.ts",
+      "import": "./src/compat/testHelpers.ts"
     },
     "./runtime-plugin": {
       "types": "./src/runtime-plugin.ts",

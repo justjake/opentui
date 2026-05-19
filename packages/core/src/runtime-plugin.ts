@@ -37,7 +37,6 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { basename, dirname, isAbsolute, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { type BunPlugin } from "bun"
 import * as coreRuntime from "./index.js"
 
 export type RuntimeModuleExports = Record<string, unknown>
@@ -58,6 +57,11 @@ export interface CreateRuntimePluginOptions {
   core?: RuntimeModuleEntry
   additional?: Record<string, RuntimeModuleEntry>
   rewrite?: RuntimePluginRewriteOptions
+}
+
+export interface BunPlugin {
+  name: string
+  setup(build: any): void | Promise<void>
 }
 
 const CORE_RUNTIME_SPECIFIER = "@opentui/core"
@@ -451,7 +455,7 @@ export function createRuntimePlugin(input: CreateRuntimePluginOptions = {}): Bun
 
         // Register both the resolved path spelling and its canonical realpath so Bun
         // can reach the loader even if it reports the same file through a different alias.
-        build.onLoad({ filter: exactPathFilter([resolvedTargetPath, canonicalTargetPath]) }, async (args) => {
+        build.onLoad({ filter: exactPathFilter([resolvedTargetPath, canonicalTargetPath]) }, async (args: any) => {
           const loadedPath = normalizeSourcePath(args.path)
           if (loadedPath !== canonicalTargetPath) {
             return undefined
@@ -466,7 +470,7 @@ export function createRuntimePlugin(input: CreateRuntimePluginOptions = {}): Bun
             throw new Error(`Unable to determine runtime loader for path: ${args.path}`)
           }
 
-          const contents = await Bun.file(loadedPath).text()
+          const contents = readFileSync(loadedPath, "utf8")
           const runtimeRewrittenContents = shouldRewriteRuntimeSpecifiers
             ? rewriteRuntimeSpecifiers(contents, runtimeModuleIdsBySpecifier)
             : contents
@@ -564,7 +568,7 @@ export function createRuntimePlugin(input: CreateRuntimePluginOptions = {}): Bun
         build.onResolve({ filter: exactSpecifierFilter(specifier) }, () => ({ path: moduleId }))
       }
 
-      build.onResolve({ filter: /.*/ }, (args) => {
+      build.onResolve({ filter: /.*/ }, (args: any) => {
         if (runtimeModuleIdsBySpecifier.has(args.path) || args.path.startsWith(RUNTIME_MODULE_PREFIX)) {
           return undefined
         }

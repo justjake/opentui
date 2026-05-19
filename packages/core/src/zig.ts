@@ -1,50 +1,50 @@
-import { dlopen, toArrayBuffer, JSCallback, ptr, type Pointer } from "bun:ffi"
-import { existsSync, writeFileSync } from "fs"
+import { JSCallback, dlopen, ptr, toArrayBuffer, type Pointer } from "./compat/ffi.js"
 import { EventEmitter } from "events"
+import { existsSync, writeFileSync } from "fs"
 import {
   type CursorStyle,
   type CursorStyleOptions,
-  type TargetChannel,
   type DebugOverlayCorner,
-  type WidthMethod,
   type Highlight,
   type LineInfo,
-  type MousePointerStyle,
+  type TargetChannel,
+  type WidthMethod,
 } from "./types.js"
-export type { LineInfo, AllocatorStats, BuildOptions }
+export type { AllocatorStats, BuildOptions, LineInfo }
 
-import { RGBA } from "./lib/RGBA.js"
 import { OptimizedBuffer } from "./buffer.js"
-import { TextBuffer } from "./text-buffer.js"
+import { isBunfsPath } from "./lib/bunfs.js"
 import { env, registerEnvVar } from "./lib/env.js"
-import {
-  StyledChunkStruct,
-  HighlightStruct,
-  LogicalCursorStruct,
-  VisualCursorStruct,
-  TerminalCapabilitiesStruct,
-  EncodedCharStruct,
-  LineInfoStruct,
-  MeasureResultStruct,
-  CursorStateStruct,
-  CursorStyleOptionsStruct,
-  GridDrawOptionsStruct,
-  NativeSpanFeedOptionsStruct,
-  NativeSpanFeedStatsStruct,
-  ReserveInfoStruct,
-  BuildOptionsStruct,
-  AllocatorStatsStruct,
-} from "./zig-structs.js"
+import { RGBA } from "./lib/RGBA.js"
+import { writeFile } from "./compat/runtime.js"
+import { TextBuffer } from "./text-buffer.js"
 import type {
+  AllocatorStats,
+  BuildOptions,
   NativeSpanFeedOptions,
   NativeSpanFeedStats,
   ReserveInfo,
-  BuildOptions,
-  AllocatorStats,
 } from "./zig-structs.js"
-import { isBunfsPath } from "./lib/bunfs.js"
+import {
+  AllocatorStatsStruct,
+  BuildOptionsStruct,
+  CursorStateStruct,
+  CursorStyleOptionsStruct,
+  EncodedCharStruct,
+  GridDrawOptionsStruct,
+  HighlightStruct,
+  LineInfoStruct,
+  LogicalCursorStruct,
+  MeasureResultStruct,
+  NativeSpanFeedOptionsStruct,
+  NativeSpanFeedStatsStruct,
+  ReserveInfoStruct,
+  StyledChunkStruct,
+  TerminalCapabilitiesStruct,
+  VisualCursorStruct,
+} from "./zig-structs.js"
 
-const module = await import(`@opentui/core-${process.platform}-${process.arch}/index.ts`)
+const module = await import(`@opentui/core-${process.platform}-${process.arch}/index.js`)
 let targetLibPath = module.default
 
 if (isBunfsPath(targetLibPath)) {
@@ -52,7 +52,9 @@ if (isBunfsPath(targetLibPath)) {
 }
 
 if (!existsSync(targetLibPath)) {
-  throw new Error(`opentui is not supported on the current platform: ${process.platform}-${process.arch}`)
+  throw new Error(
+    `opentui is not supported on the current platform: ${process.platform}-${process.arch}: not found: ${targetLibPath}`,
+  )
 }
 
 registerEnvVar({
@@ -1328,7 +1330,9 @@ function convertToDebugSymbols<T extends Record<string, any>>(symbols: T): T {
           const now = new Date()
           const timestamp = now.toISOString().replace(/[:.]/g, "-").replace(/T/, "_").split("Z")[0]
           const traceFilePath = `ffi_otui_trace_${timestamp}.log`
-          Bun.write(traceFilePath, output)
+          void writeFile(traceFilePath, output).catch((error) => {
+            console.error("Failed to write FFI trace file:", error)
+          })
         } catch (e) {
           console.error("Failed to write FFI trace file:", e)
         }
@@ -3871,7 +3875,7 @@ export function resolveRenderLib(): RenderLib {
       opentuiLib = new FFIRenderLib(opentuiLibPath)
     } catch (error) {
       throw new Error(
-        `Failed to initialize OpenTUI render library: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Failed to initialize OpenTUI render library: ${error instanceof Error ? error.stack : "Unknown error"}`,
       )
     }
   }

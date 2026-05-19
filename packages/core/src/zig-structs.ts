@@ -1,9 +1,10 @@
-import { defineStruct, defineEnum } from "bun-ffi-structs"
-import { ptr, toArrayBuffer, type Pointer } from "bun:ffi"
+import { defineEnum, defineStruct } from "./compat/bun-ffi-structs.js"
+import { ptr, toArrayBuffer, type Pointer } from "./compat/ffi.js"
 import { RGBA } from "./lib/RGBA.js"
 
 const rgbaPackTransform = (rgba?: RGBA) => (rgba ? ptr(rgba.buffer) : null)
-const rgbaUnpackTransform = (ptr?: Pointer) => (ptr ? RGBA.fromArray(new Float32Array(toArrayBuffer(ptr))) : undefined)
+const rgbaUnpackTransform = (ptr?: Pointer) =>
+  ptr ? RGBA.fromArray(new Float32Array(toArrayBuffer(ptr, 0, RGBA.BYTE_LENGTH))) : undefined
 
 type StyledChunkInput = {
   text: string

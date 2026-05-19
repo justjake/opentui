@@ -5,12 +5,14 @@ import { join } from "path"
 import { mkdir, writeFile, unlink } from "fs/promises"
 import { getDataPaths } from "../data-paths.js"
 import { getTreeSitterClient } from "./index.js"
+import { fileURLToPath } from "url"
 
 describe("TreeSitterClient", () => {
   let client: TreeSitterClient
   let dataPath: string
 
   const sharedDataPath = join(tmpdir(), "tree-sitter-shared-test-data")
+  const windowsNodeTreeSitterTimeout = !process.versions.bun && process.platform === "win32" ? 30000 : 5000
 
   beforeAll(async () => {
     await mkdir(sharedDataPath, { recursive: true })
@@ -29,10 +31,14 @@ describe("TreeSitterClient", () => {
     }
   })
 
-  test("should initialize successfully", async () => {
-    await client.initialize()
-    expect(client.isInitialized()).toBe(true)
-  })
+  test(
+    "should initialize successfully",
+    async () => {
+      await client.initialize()
+      expect(client.isInitialized()).toBe(true)
+    },
+    windowsNodeTreeSitterTimeout,
+  )
 
   test("should preload parsers for supported filetypes", async () => {
     await client.initialize()
@@ -380,6 +386,7 @@ describe("TreeSitterClient", () => {
 
   test("should support local file paths for parser configuration", async () => {
     const testQueryPath = join(dataPath, `test-highlights-${Date.now()}.scm`)
+    const testWasmPath = fileURLToPath(new URL("./assets/javascript/tree-sitter-javascript.wasm", import.meta.url))
     const simpleQuery = "(identifier) @variable"
     await writeFile(testQueryPath, simpleQuery, "utf8")
 
@@ -390,7 +397,7 @@ describe("TreeSitterClient", () => {
         queries: {
           highlights: [testQueryPath],
         },
-        wasm: "https://github.com/tree-sitter/tree-sitter-javascript/releases/download/v0.23.1/tree-sitter-javascript.wasm",
+        wasm: testWasmPath,
       })
 
       await client.initialize()
@@ -1161,5 +1168,5 @@ describe("TreeSitterClient Edge Cases", () => {
 
       dataPathsManager.appName = originalAppName
     }
-  })
+  }, 15000)
 })

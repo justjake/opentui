@@ -18,10 +18,17 @@
     "publish:react": "cd packages/react && bun run publish",
     "publish:solid": "cd packages/solid && bun run publish",
     "prepare-release": "bun scripts/prepare-release.ts",
-    "test": "bun run --filter '@opentui/core' --filter '@opentui/solid' --filter '@opentui/react' --if-present test"
+    "test": "bun run --filter '@opentui/core' --filter '@opentui/solid' --filter '@opentui/react' --if-present test",
+    "test:nodejs": "bun run --filter '@opentui/core' --filter '@opentui/solid' --filter '@opentui/react' --if-present test:nodejs",
+    "test:dist": "bun scripts/dist-test.ts --build packages/*/dist-test/*"
   },
   "devDependencies": {
+    "commander": "^13.1.0",
     "oxfmt": "0.41.0",
-    "oxlint": "1.56.0"
-  }
+    "oxlint": "1.56.0",
+    "vitest": "4.1.3"
+  },
+  "trustedDependencies": [
+    "koffi"
+  ]
 }

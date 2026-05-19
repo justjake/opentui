@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test"
-import { createMockKeys, KeyCodes } from "./mock-keys.js"
+import { describe, expect, test } from "bun:test"
 import { PassThrough } from "stream"
+import { createMockKeys, KeyCodes } from "./mock-keys.js"
 
 class MockRenderer {
   public stdin: PassThrough
@@ -385,7 +385,7 @@ describe("mock-keys", () => {
   })
 
   test("pressTab with shift modifier parses as shift+tab", async () => {
-    const { parseKeypress } = await import("../lib/parse.keypress")
+    const { parseKeypress } = await import("../lib/parse.keypress.js")
     const mockRenderer = new MockRenderer()
     const mockKeys = createMockKeys(mockRenderer as any)
 
@@ -975,7 +975,7 @@ describe("mock-keys", () => {
 
   describe("modifyOtherKeys Mode (CSI u variant)", () => {
     test("modifyOtherKeys sequences can be parsed by parseKeypress", async () => {
-      const { parseKeypress } = await import("../lib/parse.keypress")
+      const { parseKeypress } = await import("../lib/parse.keypress.js")
 
       // Test that our generated sequences can be parsed correctly
       const tests = [
