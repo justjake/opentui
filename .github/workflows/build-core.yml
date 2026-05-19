@@ -6,6 +6,7 @@ on:
     branches: [main]
 
 env:
+  NODE_VERSION: 22
   ZIG_VERSION: 0.15.2
 
 jobs:
@@ -20,6 +21,11 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.3.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -100,6 +106,11 @@ jobs:
         run: |
           cd packages/core
           bun run test:js
+
+      - name: Run dist tests
+        run: |
+          cd packages/core
+          bun run test:dist
 
   # Gate job for branch protection
   build-complete:

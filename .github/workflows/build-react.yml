@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  NODE_VERSION: 22
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -23,6 +26,11 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.3.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
