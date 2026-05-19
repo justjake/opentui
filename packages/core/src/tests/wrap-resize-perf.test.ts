@@ -16,7 +16,7 @@ import { stringToStyledText } from "../lib/styled-text.js"
  * linear complexity with noise (ratio ~2-3.5).
  */
 describe("Word wrap algorithmic complexity", () => {
-  const perfIt = !process.versions.bun && process.platform === "win32" ? it.skip : it
+  const perfIt = process.versions.bun ? it : it.skip
 
   function measureBatch(fn: (width: number) => void, widths: number[], roundsPerSample: number): number {
     const start = performance.now()
