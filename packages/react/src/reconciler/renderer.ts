@@ -7,8 +7,19 @@ import { _render, reconciler } from "./reconciler.js"
 
 // flushSync was renamed to flushSyncFromReconciler in react-reconciler 0.32.0
 // the types for react-reconciler are not up to date with the library
-const _r = reconciler as typeof reconciler & { flushSyncFromReconciler?: typeof reconciler.flushSync }
+const _r = reconciler as typeof reconciler & {
+  flushSyncFromReconciler?: typeof reconciler.flushSync
+  flushSyncWork?: typeof reconciler.flushSync
+}
 const flushSync = _r.flushSyncFromReconciler ?? _r.flushSync
+const flushSyncWork = () => {
+  if (_r.flushSyncWork) {
+    _r.flushSyncWork()
+    return
+  }
+
+  _r.flushSync()
+}
 const { createPortal } = reconciler
 
 export type Root = {
@@ -32,8 +43,7 @@ export function createRoot(renderer: CliRenderer): Root {
   const cleanup = () => {
     if (container) {
       reconciler.updateContainer(null, container, null, () => {})
-      // @ts-expect-error the types for `react-reconciler` are not up to date with the library.
-      reconciler.flushSyncWork()
+      flushSyncWork()
       container = null
     }
   }
