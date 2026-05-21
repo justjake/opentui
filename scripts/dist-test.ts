@@ -525,10 +525,14 @@ const rewriteFixturePackageJson = ({
       throw new Error(`Missing tarball for local dependency ${nativePackageName}`)
     }
 
-    dependencies[nativePackageName] = normalizeFileDependency({
+    const fileDependency = normalizeFileDependency({
       cwd: destinationDir,
       filePath: nativeTarballPath,
     })
+
+    dependencies[nativePackageName] = fileDependency
+    overrides[nativePackageName] = fileDependency
+    resolutions[nativePackageName] = fileDependency
   }
 
   return {
