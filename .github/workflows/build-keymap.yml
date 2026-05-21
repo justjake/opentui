@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Clear installed native package symlinks
+        run: rm -rf packages/core/node_modules/@opentui/core-*
+
       - name: Build core
         run: |
           cd packages/core
