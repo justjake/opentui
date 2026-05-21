@@ -197,9 +197,6 @@ jobs:
           cd ../qrcode
           bun run build
 
-          cd ../three
-          bun run build
-
           cd ../solid
           bun run build
 
@@ -219,9 +216,6 @@ jobs:
           bun run test:js
 
           cd ../qrcode
-          bun run test
-
-          cd ../three
           bun run test
 
           cd ../solid
@@ -359,7 +353,7 @@ jobs:
             ...Object.keys(corePackage.optionalDependencies ?? {})
               .filter((name) => name.startsWith("@opentui/core-"))
               .map((name) => name.replace("@opentui/", `${scope}/${packagePrefix}`)),
-            ...["core", "qrcode", "three", "react", "solid", "keymap"].map(
+            ...["core", "qrcode", "react", "solid", "keymap"].map(
               (name) => `${scope}/${packagePrefix}${name}`,
             ),
           ])
