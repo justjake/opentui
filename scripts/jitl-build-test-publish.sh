@@ -125,8 +125,11 @@ export NPM_CONFIG_CACHE="${TMP_DIR}/npm-cache"
 VERSION_FILES=(
   "bun.lock"
   "packages/core/package.json"
+  "packages/qrcode/package.json"
+  "packages/three/package.json"
   "packages/react/package.json"
   "packages/solid/package.json"
+  "packages/keymap/package.json"
 )
 
 restore_version_files() {
@@ -207,6 +210,16 @@ bun scripts/prepare-release.ts "${VERSION}"
 )
 
 (
+  cd packages/qrcode
+  bun run build
+)
+
+(
+  cd packages/three
+  bun run build
+)
+
+(
   cd packages/solid
   bun run build
 )
@@ -216,24 +229,41 @@ bun scripts/prepare-release.ts "${VERSION}"
   bun run build
 )
 
+(
+  cd packages/keymap
+  bun run build
+)
+
 if [[ "${SKIP_TESTS}" != "true" ]]; then
   (
     cd packages/core
     bun run test:native
-    bun run test:bun
-    bun run test:nodejs
+    bun run test:js
+  )
+
+  (
+    cd packages/qrcode
+    bun run test
+  )
+
+  (
+    cd packages/three
+    bun run test
   )
 
   (
     cd packages/solid
     bun run test:bun
-    bun run test:nodejs
   )
 
   (
     cd packages/react
     bun run test:bun
-    bun run test:nodejs
+  )
+
+  (
+    cd packages/keymap
+    bun run test
   )
 
   bun run test:dist
