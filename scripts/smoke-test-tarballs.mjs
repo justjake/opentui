@@ -120,9 +120,10 @@ function listTarballs(tarballDir) {
 function selectInstallTarballs(tarballs, scope, packagePrefix) {
   const coreName = `${scope}/${packagePrefix}core`
   const nativeName = `${scope}/${packagePrefix}core-${process.platform}-${process.arch}`
+  const qrcodeName = `${scope}/${packagePrefix}qrcode`
   const reactName = `${scope}/${packagePrefix}react`
   const solidName = `${scope}/${packagePrefix}solid`
-  const wanted = new Set([coreName, nativeName, reactName, solidName])
+  const wanted = new Set([coreName, nativeName, qrcodeName, reactName, solidName])
   const selected = []
 
   for (const tarball of tarballs) {
@@ -143,6 +144,7 @@ function selectInstallTarballs(tarballs, scope, packagePrefix) {
 function writeSmokeTest(workDir, scope, packagePrefix) {
   const coreName = `${scope}/${packagePrefix}core`
   const nativeName = `${scope}/${packagePrefix}core-${process.platform}-${process.arch}`
+  const qrcodeName = `${scope}/${packagePrefix}qrcode`
   const reactName = `${scope}/${packagePrefix}react`
   const solidName = `${scope}/${packagePrefix}solid`
   const scriptPath = join(workDir, "smoke.mjs")
@@ -151,11 +153,12 @@ function writeSmokeTest(workDir, scope, packagePrefix) {
     scriptPath,
     `import assert from "node:assert/strict"
 
-const [core, testing, runtimePlugin, nativePackage, reactPackage, solidPackage] = await Promise.all([
+const [core, testing, runtimePlugin, nativePackage, qrcodePackage, reactPackage, solidPackage] = await Promise.all([
   import(${JSON.stringify(coreName)}),
   import(${JSON.stringify(`${coreName}/testing`)}),
   import(${JSON.stringify(`${coreName}/runtime-plugin`)}),
   import(${JSON.stringify(nativeName)}),
+  import(${JSON.stringify(qrcodeName)}),
   import(${JSON.stringify(reactName)}),
   import(${JSON.stringify(solidName)}),
 ])
@@ -165,8 +168,14 @@ assert.equal(typeof core.TextRenderable, "function")
 assert.equal(typeof testing.createTestRenderer, "function")
 assert.equal(typeof runtimePlugin.createRuntimePlugin, "function")
 assert.equal(typeof nativePackage.default, "string")
+assert.equal(typeof qrcodePackage.QRCode, "function")
+assert.equal(typeof qrcodePackage.QRCodeRenderable, "function")
 assert.equal(typeof reactPackage.createRoot, "function")
 assert.equal(typeof solidPackage.render, "function")
+
+const qrcode = qrcodePackage.QRCode.encodeText("tarball smoke", qrcodePackage.ErrorCorrectionLevel.MEDIUM)
+assert.equal(qrcode.version, 1)
+assert.equal(qrcode.toMatrix().length, qrcode.size)
 
 const { renderer, renderOnce, captureCharFrame } = await testing.createTestRenderer({
   width: 32,

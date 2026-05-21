@@ -54,7 +54,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const rootDir = resolve(__dirname, "..")
 
-const PUBLISHED_PACKAGE_DIRS = ["core", "qrcode", "three", "react", "solid", "keymap"] as const
+const PUBLISHED_PACKAGE_DIRS = ["core", "qrcode", "react", "solid", "keymap"] as const
 const TEXT_EXTENSIONS = new Set([".cjs", ".css", ".d.ts", ".js", ".json", ".map", ".md", ".mjs", ".ts", ".txt"])
 const README_NOTICE = [
   "> Experimental build of OpenTUI for Node.js from [github.com/justjake/opentui](https://github.com/justjake/opentui).",

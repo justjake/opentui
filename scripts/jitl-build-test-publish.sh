@@ -151,6 +151,8 @@ VERSION_FILES=(
   "packages/react/package.json"
   "packages/solid/package.json"
   "packages/keymap/package.json"
+  "packages/examples/package.json"
+  "packages/web/package.json"
 )
 
 restore_version_files() {
@@ -247,11 +249,6 @@ bun scripts/prepare-release.ts "${VERSION}"
 )
 
 (
-  cd packages/three
-  bun run build
-)
-
-(
   cd packages/solid
   bun run build
 )
@@ -275,11 +272,6 @@ if [[ "${SKIP_TESTS}" != "true" ]]; then
 
   (
     cd packages/qrcode
-    bun run test
-  )
-
-  (
-    cd packages/three
     bun run test
   )
 
