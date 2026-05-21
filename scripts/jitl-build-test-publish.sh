@@ -143,16 +143,50 @@ TARBALL_DIR="${TMP_DIR}/npm-tarballs"
 mkdir -p "${BACKUP_DIR}"
 export NPM_CONFIG_CACHE="${TMP_DIR}/npm-cache"
 
-VERSION_FILES=(
-  "bun.lock"
-  "packages/core/package.json"
-  "packages/qrcode/package.json"
-  "packages/three/package.json"
-  "packages/react/package.json"
-  "packages/solid/package.json"
-  "packages/keymap/package.json"
-  "packages/examples/package.json"
-  "packages/web/package.json"
+mapfile -t VERSION_FILES < <(
+  bun -e '
+    const { existsSync, readdirSync, readFileSync } = require("node:fs")
+    const { join, relative } = require("node:path")
+
+    const rootDir = process.cwd()
+    const rootPackageJson = JSON.parse(readFileSync("package.json", "utf8"))
+    const workspacePatterns = rootPackageJson.workspaces ?? []
+    const workspaceDirs = []
+
+    for (const pattern of workspacePatterns) {
+      if (!pattern.includes("*")) {
+        workspaceDirs.push(join(rootDir, pattern))
+        continue
+      }
+
+      if (pattern.endsWith("/*") && pattern.indexOf("*") === pattern.length - 1) {
+        const baseDir = join(rootDir, pattern.slice(0, -2))
+        if (!existsSync(baseDir)) continue
+        for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+          if (entry.isDirectory()) workspaceDirs.push(join(baseDir, entry.name))
+        }
+        continue
+      }
+
+      throw new Error(`Unsupported workspace pattern: ${pattern}`)
+    }
+
+    const lockstepPackageJsons = []
+    for (const workspaceDir of [...new Set(workspaceDirs)]) {
+      const packageJsonPath = join(workspaceDir, "package.json")
+      if (!existsSync(packageJsonPath)) continue
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"))
+      if (
+        typeof packageJson.name === "string" &&
+        packageJson.name.startsWith("@opentui/") &&
+        typeof packageJson.version === "string"
+      ) {
+        lockstepPackageJsons.push(relative(rootDir, packageJsonPath))
+      }
+    }
+
+    console.log(["bun.lock", ...lockstepPackageJsons.sort()].join("\n"))
+  '
 )
 
 restore_version_files() {
