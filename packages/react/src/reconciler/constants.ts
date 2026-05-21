@@ -8,3 +8,4 @@ const constants = ((constantsModule as ReconcilerConstants & { default?: Reconci
 export const ConcurrentRoot = constants.ConcurrentRoot
 export const DefaultEventPriority = constants.DefaultEventPriority
 export const NoEventPriority = constants.NoEventPriority ?? 0
+export const isReact18Reconciler = constants.NoEventPriority == null

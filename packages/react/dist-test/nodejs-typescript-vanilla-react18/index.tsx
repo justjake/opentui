@@ -77,6 +77,46 @@ describe("@opentui/react dist test (Node.js + TypeScript, vanilla React 18)", ()
     }
   })
 
+  it("commits state updates", async () => {
+    const { renderer, captureCharFrame } = await createTestRenderer({
+      width: 20,
+      height: 4,
+    })
+
+    let increment = () => {}
+
+    function Counter(): ReactNode {
+      const [count, setCount] = useState(0)
+      increment = () => setCount((current) => current + 1)
+      return <text>{`Count: ${count}`}</text>
+    }
+
+    // @ts-expect-error - required for React act() to work in test environment
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    const root = createRoot(renderer)
+
+    try {
+      act(() => {
+        root.render(<Counter />)
+      })
+      await renderer.idle()
+      assert.match(captureCharFrame(), /Count: 0/)
+
+      act(() => {
+        increment()
+      })
+      await renderer.idle()
+      assert.match(captureCharFrame(), /Count: 1/)
+    } finally {
+      act(() => {
+        root.unmount()
+      })
+      renderer.destroy()
+      // @ts-expect-error
+      globalThis.IS_REACT_ACT_ENVIRONMENT = false
+    }
+  })
+
   it("renders a box with border", async () => {
     const { renderer, renderOnce, captureCharFrame } = await testRender(
       <box title="Greetings" style={{ border: true, width: 25, height: 5 }}>

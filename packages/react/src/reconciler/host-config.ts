@@ -7,14 +7,21 @@ import { textNodeKeys, type TextNodeKey } from "../components/text.js"
 import type { Container, HostContext, Instance, Props, PublicInstance, TextInstance, Type } from "../types/host.js"
 import { getNextId } from "../utils/id.js"
 import { setInitialProperties, updateProperties } from "../utils/index.js"
-import { DefaultEventPriority, NoEventPriority } from "./constants.js"
+import { DefaultEventPriority, NoEventPriority, isReact18Reconciler } from "./constants.js"
 
 let currentUpdatePriority = NoEventPriority
 
-const react18HostConfig = {
-  getCurrentEventPriority() {
-    return DefaultEventPriority
-  },
+interface React18HostConfigFields {
+  getCurrentEventPriority(): number
+  prepareUpdate(instance: Instance, type: Type, oldProps: Props, newProps: Props): true | null
+  commitUpdate(
+    instance: Instance,
+    updatePayload: true,
+    type: Type,
+    oldProps: Props,
+    newProps: Props,
+    internalInstanceHandle: unknown,
+  ): void
 }
 
 // https://github.com/facebook/react/tree/main/packages/react-reconciler#practical-examples
@@ -34,7 +41,6 @@ export const hostConfig: HostConfig<
   unknown, // NoTimeout
   unknown // TransitionStatus
 > = {
-  ...react18HostConfig,
   supportsMutation: true,
   supportsPersistence: false,
   supportsHydration: false,
@@ -282,4 +288,21 @@ export const hostConfig: HostConfig<
   // @ts-expect-error DefinitelyTyped is not up to date
   rendererPackageName: "@opentui/react",
   rendererVersion: pkgJson.version,
+}
+
+if (isReact18Reconciler) {
+  Object.assign(hostConfig, {
+    getCurrentEventPriority() {
+      return DefaultEventPriority
+    },
+
+    prepareUpdate(_instance, _type, oldProps, newProps) {
+      return oldProps === newProps ? null : true
+    },
+
+    commitUpdate(instance, _updatePayload, type, oldProps, newProps) {
+      updateProperties(instance, type, oldProps, newProps)
+      instance.requestRender()
+    },
+  } satisfies React18HostConfigFields)
 }
