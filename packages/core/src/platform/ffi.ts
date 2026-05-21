@@ -1,5 +1,6 @@
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import { createNode22Backend } from "./node22-ffi.js"
 
 declare const pointerBrand: unique symbol
 
@@ -96,7 +97,7 @@ export interface Library<Fns extends Record<string, FFIFunction>> {
 
 // A backend normalizes runtime differences once. Do not wrap hot symbol calls
 // here unless a backend must adapt them.
-interface FfiBackend {
+export interface FfiBackend {
   dlopen<Fns extends Record<string, FFIFunction>>(path: string | URL, symbols: Fns): Library<Fns>
   ptr(value: PointerSource): Pointer
   suffix: string
@@ -200,7 +201,11 @@ function loadBackend(): FfiBackend {
     const nodeFfi = requireModule("node:ffi") as NodeFfiBackend & { default?: NodeFfiBackend }
     return createNodeBackend(nodeFfi.default ?? nodeFfi)
   } catch (error) {
-    return createUnsupportedBackend(error)
+    try {
+      return createNode22Backend()
+    } catch (fallbackError) {
+      return createUnsupportedBackend(fallbackError ?? error)
+    }
   }
 }
 
