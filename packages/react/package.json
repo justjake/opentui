@@ -50,13 +50,13 @@
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "^0.32.0",
     "@types/ws": "^8.18.1",
-    "react": ">=19.0.0",
+    "react": "^18.2.0 || >=19.0.0",
     "react-devtools-core": "^7.0.1",
     "typescript": "^5",
     "ws": "^8.18.0"
   },
   "peerDependencies": {
-    "react": ">=19.0.0",
+    "react": "^18.2.0 || >=19.0.0",
     "react-devtools-core": "^7.0.1",
     "ws": "^8.18.0"
   },
@@ -70,6 +70,6 @@
   },
   "dependencies": {
     "@opentui/core": "workspace:*",
-    "react-reconciler": "^0.32.0"
+    "react-reconciler": "^0.29.0 || ^0.32.0"
   }
 }
