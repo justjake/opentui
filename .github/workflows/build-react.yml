@@ -40,8 +40,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Clear installed native package symlinks
-        run: rm -rf packages/core/node_modules/@opentui/core-*
+      - name: Clear stale native outputs
+        run: rm -rf .zig-cache packages/core/src/zig/.zig-cache packages/core/src/zig/lib packages/core/node_modules/@opentui/core-*
 
       - name: Build core
         run: |
