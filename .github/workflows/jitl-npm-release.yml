@@ -6,11 +6,15 @@ on:
       - main
   workflow_dispatch:
     inputs:
-      version:
-        description: "Optional version override, for example 0.1.98-jitl.0"
-        required: false
-        default: ""
-        type: string
+      type:
+        description: "Release type"
+        required: true
+        default: "next"
+        type: choice
+        options:
+          - stable
+          - next
+          - branch
       dryRun:
         description: "Run npm publish --dry-run instead of publishing"
         required: true
@@ -72,14 +76,12 @@ jobs:
           set -euo pipefail
 
           source_version="$(bun -e "console.log(require('./packages/core/package.json').version)")"
-          manual_version="${{ inputs.version }}"
+          release_type="${{ inputs.type }}"
           package_name="${NPM_SCOPE}/${NPM_PACKAGE_PREFIX}core"
           short_sha="${GITHUB_SHA::7}"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${manual_version}" ]; then
-            package_version="${manual_version}"
-          else
-            package_version="${source_version}"
+          if [ -z "${release_type}" ]; then
+            release_type="stable"
           fi
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -99,29 +101,48 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           }
 
+          sanitize_prerelease_part() {
+            bun -e "
+              const value = process.argv[1]
+              const sanitized = value
+                .replace(/[^0-9A-Za-z-]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+              process.stdout.write(sanitized || 'detached')
+            " -- "$1"
+          }
+
+          case "${release_type}" in
+            stable)
+              package_version="${source_version}"
+              npm_tag="latest"
+              ;;
+            next)
+              package_version="${source_version}-next.${short_sha}"
+              npm_tag="next"
+              ;;
+            branch)
+              branch_name="${GITHUB_REF_NAME:-detached}"
+              sanitized_branch="$(sanitize_prerelease_part "${branch_name}")"
+              package_version="${source_version}-branch-${sanitized_branch}-${short_sha}"
+              npm_tag="experimental"
+              ;;
+            *)
+              echo "Invalid release type: ${release_type}" >&2
+              exit 1
+              ;;
+          esac
+
           if [ "${dry_run}" = "true" ]; then
-            emit dry-run "${package_version}" "next"
+            emit dry-run "${package_version}" "${npm_tag}"
             exit 0
           fi
 
           if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
-            next_version="$(bun -e "
-              const base = process.argv[1]
-              const sha = process.argv[2]
-              const dash = base.indexOf('-')
-              process.stdout.write(dash === -1 ? base + '-next.' + sha : base + '.sha.' + sha)
-            " -- "${package_version}" "${short_sha}")"
-
-            if npm view "${package_name}@${next_version}" version >/dev/null 2>&1; then
-              emit skip "${next_version}" "next"
-              echo "Version ${next_version} is already published; skipping publish."
-            else
-              emit next "${next_version}" "next"
-              echo "Package version ${package_version} already exists; will publish ${next_version} with dist-tag next."
-            fi
+            emit skip "${package_version}" "${npm_tag}"
+            echo "Version ${package_version} is already published; skipping publish."
           else
-            emit stable "${package_version}" "latest"
-            echo "Package version ${package_version} is new; will publish it with dist-tag latest."
+            emit "${release_type}" "${package_version}" "${npm_tag}"
+            echo "Will publish ${package_name}@${package_version} with dist-tag ${npm_tag}."
           fi
 
       - name: Prepare release versions

@@ -7,7 +7,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SCOPE="${NPM_SCOPE:-@jitl}"
 SOURCE_SCOPE="${SOURCE_NPM_SCOPE:-@opentui}"
 PACKAGE_PREFIX="${NPM_PACKAGE_PREFIX:-opentui-}"
-VERSION="${VERSION:-}"
+RELEASE_TYPE=""
+VERSION=""
 TAG="${NPM_TAG:-}"
 DRY_RUN="${DRY_RUN:-false}"
 SKIP_TESTS="${SKIP_TESTS:-false}"
@@ -21,10 +22,10 @@ Usage: scripts/jitl-build-test-publish.sh [options]
 Build, test, pack, smoke-test, and publish the current checkout as @jitl/* packages using local npm auth.
 
 Options:
-  --version <version>       Publish this exact version instead of planning one from npm.
+  --type <type>             Required. One of stable, next, branch.
   --scope <scope>           Target npm scope. Defaults to @jitl or NPM_SCOPE.
   --package-prefix <text>   Prefix for package names. Defaults to opentui- or NPM_PACKAGE_PREFIX.
-  --tag <tag>               npm dist-tag. Defaults to latest for new base versions, next for SHA versions.
+  --tag <tag>               Override the npm dist-tag planned by --type.
   --dry-run                 Build and run npm publish --dry-run.
   --skip-tests              Build and publish without running tests.
   --keep-version-changes    Leave package.json and bun.lock version edits in the worktree.
@@ -32,19 +33,24 @@ Options:
   -h, --help                Show this help.
 
 Environment equivalents:
-  VERSION, NPM_SCOPE, NPM_PACKAGE_PREFIX, NPM_TAG, DRY_RUN=true, SKIP_TESTS=true,
+  NPM_SCOPE, NPM_PACKAGE_PREFIX, NPM_TAG, DRY_RUN=true, SKIP_TESTS=true,
   KEEP_VERSION_CHANGES=true, SKIP_EXISTING=false
+
+Release types:
+  stable                    Publish package.json version to the latest tag.
+  next                      Publish package.json version + -next.<sha> to the next tag.
+  branch                    Publish package.json version + -branch-<branch>-<sha> to the experimental tag.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --version)
-      VERSION="${2:-}"
+    --type)
+      RELEASE_TYPE="${2:-}"
       shift 2
       ;;
-    --version=*)
-      VERSION="${1#--version=}"
+    --type=*)
+      RELEASE_TYPE="${1#--type=}"
       shift
       ;;
     --scope)
@@ -108,6 +114,21 @@ if [[ -n "${PACKAGE_PREFIX}" && ! "${PACKAGE_PREFIX}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.
   echo "Invalid npm package prefix: ${PACKAGE_PREFIX}" >&2
   exit 1
 fi
+
+case "${RELEASE_TYPE}" in
+  stable | next | branch)
+    ;;
+  "")
+    echo "Missing required --type <stable|next|branch>" >&2
+    usage >&2
+    exit 1
+    ;;
+  *)
+    echo "Invalid release type: ${RELEASE_TYPE}" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
 
 for tool in bun git node npm zig; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
@@ -173,28 +194,39 @@ fi
 
 BASE_VERSION="$(bun -e "console.log(require('./packages/core/package.json').version)")"
 SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-PLAN_PACKAGE_NAME="${SCOPE}/${PACKAGE_PREFIX}core"
+BRANCH_NAME="$(git branch --show-current)"
 
-if [[ -z "${VERSION}" ]]; then
-  if npm view "${PLAN_PACKAGE_NAME}@${BASE_VERSION}" version >/dev/null 2>&1; then
-    VERSION="$(bun -e "
-      const base = process.argv[1]
-      const sha = process.argv[2]
-      process.stdout.write(base.includes('-') ? base + '.sha.' + sha : base + '-next.' + sha)
-    " -- "${BASE_VERSION}" "${SHORT_SHA}")"
-    TAG="${TAG:-next}"
-  else
+sanitize_prerelease_part() {
+  bun -e "
+    const value = process.argv[1]
+    const sanitized = value
+      .replace(/[^0-9A-Za-z-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    process.stdout.write(sanitized || 'detached')
+  " -- "$1"
+}
+
+case "${RELEASE_TYPE}" in
+  stable)
     VERSION="${BASE_VERSION}"
     TAG="${TAG:-latest}"
-  fi
-else
-  TAG="${TAG:-next}"
-fi
+    ;;
+  next)
+    VERSION="${BASE_VERSION}-next.${SHORT_SHA}"
+    TAG="${TAG:-next}"
+    ;;
+  branch)
+    SANITIZED_BRANCH="$(sanitize_prerelease_part "${BRANCH_NAME:-detached}")"
+    VERSION="${BASE_VERSION}-branch-${SANITIZED_BRANCH}-${SHORT_SHA}"
+    TAG="${TAG:-experimental}"
+    ;;
+esac
 
 echo "Publishing plan:"
 echo "  scope: ${SCOPE}"
 echo "  source scope: ${SOURCE_SCOPE}"
 echo "  package prefix: ${PACKAGE_PREFIX}"
+echo "  type: ${RELEASE_TYPE}"
 echo "  version: ${VERSION}"
 echo "  npm tag: ${TAG}"
 echo "  dry run: ${DRY_RUN}"
