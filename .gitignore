@@ -10,6 +10,7 @@ packed
 *.tgz
 *.log
 *.txt
+packages/core/src/zig/zig-pkg/
 
 # code coverage
 coverage
