@@ -2,12 +2,12 @@ import { TextNodeRenderable, TextRenderable, type Renderable } from "@opentui/co
 import pkgJson from "../../package.json" with { type: "json" }
 import { createContext } from "react"
 import type { HostConfig, ReactContext } from "react-reconciler"
-import { DefaultEventPriority, NoEventPriority } from "react-reconciler/constants"
 import { getComponentCatalogue } from "../components/index.js"
 import { textNodeKeys, type TextNodeKey } from "../components/text.js"
 import type { Container, HostContext, Instance, Props, PublicInstance, TextInstance, Type } from "../types/host.js"
 import { getNextId } from "../utils/id.js"
 import { setInitialProperties, updateProperties } from "../utils/index.js"
+import { DefaultEventPriority, NoEventPriority, isReact18Reconciler } from "./constants.js"
 
 let currentUpdatePriority = NoEventPriority
 
@@ -18,6 +18,19 @@ type ReconcilerExtensions = {
   maySuspendCommitInSyncRender(type: Type, props: Props): boolean
   rendererPackageName: string
   rendererVersion: string
+}
+
+interface React18HostConfigFields {
+  getCurrentEventPriority(): number
+  prepareUpdate(instance: Instance, type: Type, oldProps: Props, newProps: Props): true | null
+  commitUpdate(
+    instance: Instance,
+    updatePayload: true,
+    type: Type,
+    oldProps: Props,
+    newProps: Props,
+    internalInstanceHandle: unknown,
+  ): void
 }
 
 // https://github.com/facebook/react/tree/main/packages/react-reconciler#practical-examples
@@ -284,4 +297,21 @@ export const hostConfig: HostConfig<
 
   rendererPackageName: "@opentui/react",
   rendererVersion: pkgJson.version,
+}
+
+if (isReact18Reconciler) {
+  Object.assign(hostConfig, {
+    getCurrentEventPriority() {
+      return DefaultEventPriority
+    },
+
+    prepareUpdate(_instance, _type, oldProps, newProps) {
+      return oldProps === newProps ? null : true
+    },
+
+    commitUpdate(instance, _updatePayload, type, oldProps, newProps) {
+      updateProperties(instance, type, oldProps, newProps)
+      instance.requestRender()
+    },
+  } satisfies React18HostConfigFields)
 }
