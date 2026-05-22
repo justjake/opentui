@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    if: github.repository == 'anomalyco/opentui'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository using git
@@ -23,6 +24,7 @@ jobs:
           package-manager: bun@latest
 
   deploy:
+    if: github.repository == 'anomalyco/opentui'
     needs: build
     runs-on: ubuntu-latest
     environment:
