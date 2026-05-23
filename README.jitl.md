@@ -4,6 +4,7 @@
 > - Support React 18 (upstream requires React 19).
 > - Support `require(ESM)` by removing top-level `await` expressions (upstream requires `await import(...)` in CommonJS modules).
 > - `await writeReactToScrollback(renderer, <View />)` helper for split-footer mode.
+> - `clearOnShutdown: false` preserves visible main-screen/split-footer content and scrollback on shutdown.
 > - Changes to `split-footer` screen mode:
 >
 > ```typescript

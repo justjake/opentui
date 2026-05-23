@@ -447,7 +447,8 @@ pub const CliRenderer = struct {
 
         var stdoutWriter = std.fs.File.stdout().writer(&self.stdoutBuffer);
         const direct = &stdoutWriter.interface;
-        self.terminal.resetState(direct) catch {
+        const preserve_main_screen = !self.clearOnShutdown and !self.useAlternateScreen;
+        self.terminal.resetStateWithOptions(direct, .{ .preserve_main_screen = preserve_main_screen }) catch {
             logger.warn("Failed to reset terminal state", .{});
         };
 
