@@ -1,6 +1,6 @@
 import { stringWidth, stripANSI } from "../platform/runtime.js"
 
-export type CapturedStdoutMode = "rerendered" | "passthrough"
+export type ExternalOutputRendering = "emulated" | "terminal-native"
 
 export interface CapturedStdoutPassthroughCommit {
   kind: "passthrough"
