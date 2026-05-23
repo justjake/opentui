@@ -5,7 +5,7 @@ import { EditorView, type VisualCursor } from "../editor-view.js"
 import { RGBA, parseColor } from "../lib/RGBA.js"
 import type { RenderContext, Highlight, CursorStyleOptions, LineInfoProvider, LineInfo } from "../types.js"
 import type { OptimizedBuffer } from "../buffer.js"
-import { MeasureMode } from "yoga-layout"
+import { MeasureMode } from "../lib/yoga-sync.js"
 import type { SyntaxStyle } from "../syntax-style.js"
 
 const BrandedEditBufferRenderable: unique symbol = Symbol.for("@opentui/core/EditBufferRenderable")
