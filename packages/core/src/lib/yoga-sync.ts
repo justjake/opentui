@@ -144,6 +144,8 @@ type YogaLoaderModule = {
   ): WebAssembly.Exports
 }
 
+type LoadYoga = (module: YogaLoaderModule) => Promise<YogaLoaderModule>
+
 function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64)
   const bytes = new Uint8Array(new ArrayBuffer(binary.length))
@@ -162,8 +164,15 @@ function loadYogaWasmBytes(): Uint8Array<ArrayBuffer> {
   return decodeBase64(match[1])
 }
 
+function loadYogaImplFromSource(): LoadYoga {
+  const source = readFileSync(yogaBinaryPath, "utf8")
+    .replace("var _scriptDir = import.meta.url;", 'var _scriptDir = "";')
+    .replace("export default loadYoga;", "return loadYoga;")
+  return new Function(source)() as LoadYoga
+}
+
 function createYoga(): typeof YogaDefault {
-  const loadYogaImpl = require(yogaBinaryPath).default as (module: YogaLoaderModule) => Promise<YogaLoaderModule>
+  const loadYogaImpl = loadYogaImplFromSource()
   const wrapAssembly = require(yogaWrapAssemblyPath).default as (module: YogaLoaderModule) => typeof YogaDefault
   const wasmBytes = loadYogaWasmBytes()
   const module: YogaLoaderModule = {
