@@ -169,6 +169,9 @@ export interface CliRendererConfig {
   // Choose what happens to writes that go through `stdout.write`.
   externalOutputMode?: ExternalOutputMode
 
+  // Also capture writes that go through `stderr.write`. Pass a stream to capture that stream.
+  captureStderr?: boolean | NodeJS.WriteStream
+
   // Choose how captured stdout is replayed in split-footer mode. Defaults to "rerendered".
   capturedStdoutMode?: CapturedStdoutMode
 
@@ -361,6 +364,21 @@ function resolveModes(config: CliRendererConfig): {
     footerHeight,
     externalOutputMode,
     capturedStdoutMode: config.capturedStdoutMode ?? "rerendered",
+  }
+}
+
+function resolveCapturedStderr(config: CliRendererConfig): {
+  enabled: boolean
+  stream: NodeJS.WriteStream
+} {
+  const captureStderr = config.captureStderr
+  if (captureStderr && typeof captureStderr !== "boolean") {
+    return { enabled: true, stream: captureStderr }
+  }
+
+  return {
+    enabled: captureStderr === true,
+    stream: process.stderr,
   }
 }
 
@@ -741,6 +759,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   public rendererPtr: Pointer
   public stdin: NodeJS.ReadStream
   private stdout: NodeJS.WriteStream
+  private stderr: NodeJS.WriteStream
   private exitOnCtrlC: boolean
   private exitSignals: NodeJS.Signals[]
   private _exitListenersAdded: boolean = false
@@ -834,6 +853,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private _footerHeight: number = DEFAULT_FOOTER_HEIGHT
   private _externalOutputMode: ExternalOutputMode = "passthrough"
   private _capturedStdoutMode: CapturedStdoutMode = "rerendered"
+  private _captureStderr: boolean = false
   private clearOnShutdown: boolean = true
   private _suspendedMouseEnabled: boolean = false
   private _previousControlState: RendererControlState = RendererControlState.IDLE
@@ -866,6 +886,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private externalOutputQueue = new ExternalOutputQueue()
   private pendingExternalOutputMode: ExternalOutputMode | null = null
   private realStdoutWrite: (chunk: any, encoding?: any, callback?: any) => boolean
+  private realStderrWrite: (chunk: any, encoding?: any, callback?: any) => boolean
 
   private _useConsole: boolean = true
   private sigwinchHandler: () => void = (() => {
@@ -985,7 +1006,11 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     this.stdin = stdin
     this.stdout = stdout
+    const capturedStderr = resolveCapturedStderr(config)
+    this.stderr = capturedStderr.stream
     this.realStdoutWrite = stdout.write
+    this.realStderrWrite = this.stderr.write
+    this._captureStderr = capturedStderr.enabled
     this.lib = lib
     this._terminalWidth = stdout.columns ?? width
     this._terminalHeight = stdout.rows ?? height
@@ -1117,7 +1142,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     })
     this.consoleMode = config.consoleMode ?? "console-overlay"
     this.applyScreenMode(screenMode, false, false)
-    this.stdout.write = externalOutputMode === "capture-stdout" ? this.interceptStdoutWrite : this.realStdoutWrite
+    this.applyExternalOutputMode(externalOutputMode)
     this._openConsoleOnError = config.openConsoleOnError ?? process.env.NODE_ENV !== "production"
     this._onDestroy = config.onDestroy
 
@@ -1495,6 +1520,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return this._capturedStdoutMode
   }
 
+  public get captureStderr(): boolean {
+    return this._captureStderr
+  }
+
   public set externalOutputMode(mode: ExternalOutputMode) {
     if (mode === "capture-stdout" && this.screenMode !== "split-footer") {
       throw new Error('externalOutputMode "capture-stdout" requires screenMode "split-footer"')
@@ -1532,6 +1561,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private applyExternalOutputMode(mode: ExternalOutputMode): void {
     this._externalOutputMode = mode
     this.stdout.write = mode === "capture-stdout" ? this.interceptStdoutWrite : this.realStdoutWrite
+    if (this._captureStderr) {
+      this.stderr.write = mode === "capture-stdout" ? this.interceptStderrWrite : this.realStderrWrite
+    }
   }
 
   private afterExternalOutputModeChanged(previousMode: ExternalOutputMode, mode: ExternalOutputMode): void {
@@ -2386,15 +2418,15 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
   }
 
-  private interceptStdoutWrite = (chunk: any, encoding?: any, callback?: any): boolean => {
+  private interceptCapturedWrite(chunk: any, encoding?: any, callback?: any): boolean {
     const resolvedCallback = typeof encoding === "function" ? encoding : callback
     const resolvedEncoding = typeof encoding === "string" ? encoding : undefined
     const text = typeof chunk === "string" ? chunk : (chunk?.toString(resolvedEncoding) ?? "")
 
     if (this._externalOutputMode === "capture-stdout" && this._screenMode === "split-footer" && this._splitHeight > 0) {
-      // Capture mode intentionally diverts stdout into split commit snapshots
-      // instead of writing directly to process stdout. Native flushing will append
-      // and repaint in one controlled frame, which is what avoids footer flicker.
+      // Capture mode intentionally diverts stream writes into split commits.
+      // Native flushing appends and repaints in one controlled frame, which is
+      // what avoids footer flicker.
       const commits =
         this._capturedStdoutMode === "passthrough"
           ? [createCapturedStdoutPassthroughCommit(text)].filter(
@@ -2416,6 +2448,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
 
     return true
+  }
+
+  private interceptStdoutWrite = (chunk: any, encoding?: any, callback?: any): boolean => {
+    return this.interceptCapturedWrite(chunk, encoding, callback)
+  }
+
+  private interceptStderrWrite = (chunk: any, encoding?: any, callback?: any): boolean => {
+    return this.interceptCapturedWrite(chunk, encoding, callback)
   }
 
   private getSplitPinnedRenderOffset(): number {
@@ -3987,6 +4027,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._externalOutputMode = "passthrough"
     this.pendingExternalOutputMode = null
     this.stdout.write = this.realStdoutWrite
+    if (this._captureStderr) {
+      this.stderr.write = this.realStderrWrite
+    }
     this.externalOutputQueue.clear()
 
     this.lib.destroyRenderer(this.rendererPtr)
