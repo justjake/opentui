@@ -676,6 +676,14 @@ export function buildKittyKeyboardFlags(config: KittyKeyboardOptions | null | un
   return flags
 }
 
+function cloneRawMouseEvent(mouseEvent: RawMouseEvent): RawMouseEvent {
+  return {
+    ...mouseEvent,
+    modifiers: { ...mouseEvent.modifiers },
+    scroll: mouseEvent.scroll ? { ...mouseEvent.scroll } : undefined,
+  }
+}
+
 export class MouseEvent {
   public readonly type: MouseEventType
   public readonly button: number
@@ -720,6 +728,11 @@ export class MouseEvent {
   public preventDefault(): void {
     this._defaultPrevented = true
   }
+}
+
+export interface CliRendererRawMouseEvent {
+  input: Readonly<RawMouseEvent>
+  pendingEvent: RawMouseEvent
 }
 
 export enum MouseButton {
@@ -797,6 +810,7 @@ export enum CliRenderEvents {
   RESIZE = "resize",
   FRAME = "frame",
   EXTERNAL_OUTPUT = "external_output",
+  RAW_MOUSE = "raw_mouse",
   FOCUS = "focus",
   BLUR = "blur",
   FOCUSED_RENDERABLE = "focused_renderable",
@@ -3288,6 +3302,13 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   private processSingleMouseEvent(mouseEvent: RawMouseEvent): boolean {
+    if (this.listenerCount(CliRenderEvents.RAW_MOUSE) > 0) {
+      this.emit(CliRenderEvents.RAW_MOUSE, {
+        input: cloneRawMouseEvent(mouseEvent),
+        pendingEvent: mouseEvent,
+      } satisfies CliRendererRawMouseEvent)
+    }
+
     if (this._splitHeight > 0) {
       if (mouseEvent.y < this.renderOffset) {
         return false

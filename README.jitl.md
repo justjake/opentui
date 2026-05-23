@@ -4,6 +4,7 @@
 > - Support React 18 (upstream requires React 19).
 > - Support `require(ESM)` by removing top-level `await` expressions (upstream requires `await import(...)` in CommonJS modules).
 > - `await writeReactToScrollback(renderer, <View />)` helper for split-footer mode.
+> - `CliRenderEvents.RAW_MOUSE` and React `useRawMouse(event => ...)` expose parsed terminal mouse events relative to the screen rather than the renderer's coordinate system.
 > - `clearOnShutdown: false` preserves visible main-screen/split-footer content and scrollback on shutdown.
 > - Changes to `split-footer` screen mode:
 >
