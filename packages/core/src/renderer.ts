@@ -4078,7 +4078,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this.stdin.setRawMode(false)
     }
 
-    this.externalOutputMode = "passthrough"
+    if (this.clearOnShutdown) {
+      this.externalOutputMode = "passthrough"
+    }
 
     if (this._splitHeight > 0 && this.clearOnShutdown) {
       this.flushStdoutCache(this._splitHeight, true)
@@ -4090,6 +4092,26 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.lib.suspendRenderer(this.rendererPtr)
   }
 
+  private captureShutdownFrameSnapshot(): OptimizedBuffer | null {
+    if (this.clearOnShutdown || this._splitHeight <= 0 || !this._terminalIsSetup) {
+      return null
+    }
+
+    const snapshot = OptimizedBuffer.create(this.width, this.height, this.widthMethod, {
+      id: "shutdown-frame-snapshot",
+    })
+    snapshot.drawFrameBuffer(0, 0, this.currentRenderBuffer)
+    return snapshot
+  }
+
+  private restoreShutdownFrameSnapshot(snapshot: OptimizedBuffer | null): void {
+    if (snapshot === null) {
+      return
+    }
+
+    this.nextRenderBuffer.drawFrameBuffer(0, 0, snapshot)
+  }
+
   private finalizeDestroy(): void {
     if (this._destroyFinalized) return
 
@@ -4097,6 +4119,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._destroyPending = false
 
     this.cleanupBeforeDestroy()
+    const shutdownFrameSnapshot = this.captureShutdownFrameSnapshot()
 
     // Clean up palette detector
     if (this._paletteDetector) {
@@ -4126,16 +4149,24 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.oscSubscribers.clear()
     this._console.destroy()
 
-    if (
-      this._splitHeight > 0 &&
-      this._terminalIsSetup &&
-      this._controlState !== RendererControlState.EXPLICIT_SUSPENDED
-    ) {
-      this.flushPendingSplitOutputBeforeTransition(this.clearOnShutdown)
-      this.renderOffset = 0
-      if (this.clearOnShutdown) {
-        this.lib.setRenderOffset(this.rendererPtr, 0)
+    try {
+      if (
+        this._splitHeight > 0 &&
+        this._terminalIsSetup &&
+        this._controlState !== RendererControlState.EXPLICIT_SUSPENDED
+      ) {
+        if (!this.clearOnShutdown) {
+          this.clearPendingSplitFooterTransition()
+          this.restoreShutdownFrameSnapshot(shutdownFrameSnapshot)
+        }
+        this.flushPendingSplitOutputBeforeTransition(this.clearOnShutdown || shutdownFrameSnapshot !== null)
+        this.renderOffset = 0
+        if (this.clearOnShutdown) {
+          this.lib.setRenderOffset(this.rendererPtr, 0)
+        }
       }
+    } finally {
+      shutdownFrameSnapshot?.destroy()
     }
 
     this._externalOutputMode = "passthrough"
