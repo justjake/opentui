@@ -1560,6 +1560,28 @@ test("CliRenderer split-footer renderNative repaints footer frame with no pendin
   splitCommitSpy.mockRestore()
 })
 
+test("CliRenderer requestFullRepaintRender forces split-footer repaint", async () => {
+  const result = await createTestRenderer({
+    screenMode: "split-footer",
+    footerHeight: 6,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const repaintSpy = spyOn((renderer as any).lib, "repaintSplitFooter")
+
+  renderer.requestFullRepaintRender()
+  await result.renderOnce()
+
+  expect(repaintSpy).toHaveBeenCalledTimes(1)
+  expect(repaintSpy.mock.calls[0]?.[2]).toBe(true)
+  expect((renderer as any).forceFullRepaintRequested).toBe(false)
+
+  repaintSpy.mockRestore()
+})
+
 test("CliRenderer split-footer forwards forced repaint flag to final pending commit", async () => {
   const result = await createTestRenderer({
     screenMode: "split-footer",

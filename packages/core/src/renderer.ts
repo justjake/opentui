@@ -1439,6 +1439,11 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
   }
 
+  public requestFullRepaintRender(): void {
+    this.forceFullRepaintRequested = true
+    this.requestRender()
+  }
+
   private async activateFrame() {
     if (!this.updateScheduled) {
       this.resolveIdleIfNeeded()
