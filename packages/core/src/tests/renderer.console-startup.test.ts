@@ -148,6 +148,7 @@ test("CliRenderer applies explicit screen and output modes", async () => {
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    capturedStdoutMode: "passthrough",
     consoleMode: "disabled",
   })
 
@@ -156,6 +157,7 @@ test("CliRenderer applies explicit screen and output modes", async () => {
   expect(renderer.screenMode).toBe("split-footer")
   expect(renderer.footerHeight).toBe(6)
   expect(renderer.externalOutputMode).toBe("capture-stdout")
+  expect(renderer.capturedStdoutMode).toBe("passthrough")
   expect(renderer.consoleMode).toBe("disabled")
 })
 
@@ -1992,6 +1994,36 @@ test("CliRenderer split-footer routes captured output through snapshot native co
 
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   splitCommitSpy.mockRestore()
+})
+
+test("CliRenderer split-footer passthrough captured stdout preserves logical writes", async () => {
+  const result = await createTestRenderer({
+    width: 4,
+    height: 8,
+    screenMode: "split-footer",
+    footerHeight: 3,
+    externalOutputMode: "capture-stdout",
+    capturedStdoutMode: "passthrough",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const lib = (renderer as any).lib
+  const snapshotCommitSpy = spyOn(lib, "commitSplitFooterSnapshot")
+  const passthroughCommitSpy = spyOn(lib, "commitSplitFooterPassthrough")
+
+  ;(renderer as any).stdout.write("\x1b[31mabcdef\x1b[0m\n")
+  await result.renderOnce()
+
+  expect(snapshotCommitSpy).not.toHaveBeenCalled()
+  expect(passthroughCommitSpy).toHaveBeenCalledTimes(1)
+  const passthroughArgs = passthroughCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array]
+  expect(new TextDecoder().decode(passthroughArgs[1])).toBe("\x1b[31mabcdef\x1b[0m\n")
+  expect(Array.from(passthroughArgs[2])).toEqual([6])
+  expect((renderer as any).renderOffset).toBe(3)
+
+  snapshotCommitSpy.mockRestore()
+  passthroughCommitSpy.mockRestore()
 })
 
 test("CliRenderer split-footer native scrollback tracks wrapped tail state across commits", async () => {
