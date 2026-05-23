@@ -99,104 +99,106 @@ registerEnvVar({
 })
 
 export interface CliRendererConfig {
-  // Read input from this stream. Defaults to process.stdin.
+  /** Read input from this stream. Defaults to process.stdin. */
   stdin?: NodeJS.ReadStream
 
-  // Use a custom stdout stream for size detection and stdout interception.
-  // Native frame output still goes to the real TTY.
+  /**
+   * Use a custom stdout stream for size detection and stdout interception.
+   * Native frame output still goes to the real TTY.
+   */
   stdout?: NodeJS.WriteStream
 
-  // Tell the native renderer it is driving a remote terminal.
+  /** Tell the native renderer it is driving a remote terminal. */
   remote?: boolean
 
-  // Skip terminal setup. Useful in tests.
+  /** Skip terminal setup. Useful in tests. */
   testing?: boolean
 
-  // Call renderer.destroy() when Ctrl+C is pressed. Defaults to true.
+  /** Call renderer.destroy() when Ctrl+C is pressed. Defaults to true. */
   exitOnCtrlC?: boolean
 
-  // Clean up on these signals. Defaults to the common termination signals.
+  /** Clean up on these signals. Defaults to the common termination signals. */
   exitSignals?: NodeJS.Signals[]
 
-  // Clear owned screen regions on suspend/destroy. Defaults to true.
+  /** Clear owned screen regions on suspend/destroy. Defaults to true. */
   clearOnShutdown?: boolean
 
-  // Forward these env var names to native terminal detection.
+  /** Forward these env var names to native terminal detection. */
   forwardEnvKeys?: string[]
 
-  // Wait this long before handling resize events. Defaults to 100 ms.
+  /** Wait this long before handling resize events. Defaults to 100 ms. */
   debounceDelay?: number
 
-  // Aim for this many frames per second in continuous mode. Defaults to 30.
+  /** Aim for this many frames per second in continuous mode. Defaults to 30. */
   targetFps?: number
 
-  // Cap immediate re-renders at this frame rate. Defaults to 60.
+  /** Cap immediate re-renders at this frame rate. Defaults to 60. */
   maxFps?: number
 
-  // Emit memory snapshots on this interval in ms. Set 0 to disable.
+  /** Emit memory snapshots on this interval in ms. Set 0 to disable. */
   memorySnapshotInterval?: number
 
-  // Render from a separate thread when the platform supports it.
+  /** Render from a separate thread when the platform supports it. */
   useThread?: boolean
 
-  // Collect frame timing stats for the debug overlay.
+  /** Collect frame timing stats for the debug overlay. */
   gatherStats?: boolean
 
-  // Keep this many timing samples. Defaults to 300.
+  /** Keep this many timing samples. Defaults to 300. */
   maxStatSamples?: number
 
-  // Pass options to the built-in console overlay.
+  /** Pass options to the built-in console overlay. */
   consoleOptions?: Omit<ConsoleOptions, "clock">
 
-  // Run these hooks after each render pass.
+  /** Run these hooks after each render pass. */
   postProcessFns?: ((buffer: OptimizedBuffer, deltaTime: number) => void)[]
 
-  // Track mouse move events. Defaults to true.
+  /** Track mouse move events. Defaults to true. */
   enableMouseMovement?: boolean
 
-  // Enable mouse input. Defaults to true.
+  /** Enable mouse input. Defaults to true. */
   useMouse?: boolean
 
-  // Focus the nearest focusable renderable on left click. Defaults to true.
+  /** Focus the nearest focusable renderable on left click. Defaults to true. */
   autoFocus?: boolean
 
-  // Choose where the renderer owns terminal space. Defaults to "alternate-screen".
+  /** Choose where the renderer owns terminal space. Defaults to "alternate-screen". */
   screenMode?: ScreenMode
 
-  // Set the requested footer height for "split-footer". Defaults to 12.
+  /** Set the requested footer height for "split-footer". Defaults to 12. */
   footerHeight?: number
 
-  // Choose what happens to writes that go through `stdout.write`.
+  /** Choose what happens to writes that go through `stdout.write`. */
   externalOutputMode?: ExternalOutputMode
 
-  // Also capture writes that go through `stderr.write`. Pass a stream to capture that stream.
+  /** Also capture writes that go through `stderr.write`. Pass a stream to capture that stream. */
   externalOutputCaptureStderr?: boolean | NodeJS.WriteStream
 
-  // Choose how captured external output is rendered in split-footer mode. Defaults to "emulated".
+  /** Choose how captured external output is rendered in split-footer mode. Defaults to "emulated". */
   externalOutputRendering?: ExternalOutputRendering
 
-  // Choose what the built-in console overlay does.
+  /** Choose what the built-in console overlay does. */
   consoleMode?: ConsoleMode
 
-  // Set Kitty keyboard protocol flags, or null to disable them.
+  /** Set Kitty keyboard protocol flags, or null to disable them. */
   useKittyKeyboard?: KittyKeyboardOptions | null
 
-  // Fill the render buffer with this background color. Default transparent.
+  /** Fill the render buffer with this background color. Default transparent. */
   backgroundColor?: ColorInput
 
-  // Open the console overlay on uncaught errors. Defaults to true in development.
+  /** Open the console overlay on uncaught errors. Defaults to true in development. */
   openConsoleOnError?: boolean
 
-  // Run these input handlers before the built-in handlers.
+  /** Run these input handlers before the built-in handlers. */
   prependInputHandlers?: ((sequence: string) => boolean)[]
 
-  // Cap the stdin parser buffer size in bytes. Defaults to 64 MB.
+  /** Cap the stdin parser buffer size in bytes. Defaults to 64 MB. */
   stdinParserMaxBufferBytes?: number
 
-  // Use a custom clock for timers and tests.
+  /** Use a custom clock for timers and tests. */
   clock?: Clock
 
-  // Run after destroy() finishes cleanup.
+  /** Run after destroy() finishes cleanup. */
   onDestroy?: () => void
 }
 
