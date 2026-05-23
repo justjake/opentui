@@ -28,8 +28,25 @@ export function createRoot(renderer: CliRenderer): Root {
 
   const cleanup = () => {
     if (container) {
-      reconciler.updateContainer(null, container, null, () => {})
-      flushSyncWork()
+      const unmount = () => {
+        flushSync(() => {
+          reconciler.updateContainer(null, container, null, () => {})
+        })
+        flushSyncWork()
+      }
+
+      if (renderer.clearOnShutdownEnabled) {
+        unmount()
+      } else {
+        const requestRender = renderer.requestRender.bind(renderer)
+        renderer.requestRender = () => {}
+        try {
+          unmount()
+        } finally {
+          renderer.requestRender = requestRender
+        }
+      }
+
       container = null
     }
   }

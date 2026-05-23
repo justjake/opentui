@@ -1264,6 +1264,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return this._isDestroyed
   }
 
+  public get clearOnShutdownEnabled(): boolean {
+    return this.clearOnShutdown
+  }
+
   public registerLifecyclePass(renderable: Renderable) {
     this.lifecyclePasses.add(renderable)
   }
@@ -4100,7 +4104,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this._terminalIsSetup &&
       this._controlState !== RendererControlState.EXPLICIT_SUSPENDED
     ) {
-      this.flushPendingSplitOutputBeforeTransition(true)
+      this.flushPendingSplitOutputBeforeTransition(this.clearOnShutdown)
       this.renderOffset = 0
       if (this.clearOnShutdown) {
         this.lib.setRenderOffset(this.rendererPtr, 0)

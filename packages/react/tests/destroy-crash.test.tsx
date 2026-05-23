@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import React, { useEffect, useState } from "react"
+import React, { act, useEffect, useState } from "react"
 import { createTestRenderer } from "@opentui/core/testing"
 import { createRoot } from "../src/reconciler/renderer.js"
 
@@ -31,6 +31,41 @@ import { createRoot } from "../src/reconciler/renderer.js"
  */
 
 describe("Renderer Destroy Crash with Pending React Updates", () => {
+  it("does not schedule a final empty render from automatic unmount when clearOnShutdown is false", async () => {
+    // @ts-expect-error - this is a test environment
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+    try {
+      const testSetup = await createTestRenderer({
+        width: 40,
+        height: 10,
+        screenMode: "split-footer",
+        footerHeight: 4,
+        externalOutputMode: "capture-stdout",
+        consoleMode: "disabled",
+        clearOnShutdown: false,
+        useThread: false,
+      })
+
+      const root = createRoot(testSetup.renderer)
+
+      act(() => {
+        root.render(<text>footer</text>)
+      })
+      await testSetup.flush()
+      expect(testSetup.renderer.getSchedulerState().hasScheduledRender).toBe(false)
+
+      act(() => {
+        testSetup.renderer.destroy()
+      })
+
+      expect(testSetup.renderer.getSchedulerState().hasScheduledRender).toBe(false)
+    } finally {
+      // @ts-expect-error - this is a test environment
+      globalThis.IS_REACT_ACT_ENVIRONMENT = false
+    }
+  })
+
   it("should not crash when renderer is destroyed without unmounting React while interval updates state", async () => {
     // This test reproduces the EXACT scenario from the bug report:
     // - Component has an interval updating state
