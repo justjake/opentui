@@ -10,6 +10,8 @@ import {
 import { writeFile } from "./platform/runtime.js"
 import { existsSync, writeFileSync } from "fs"
 import { EventEmitter } from "events"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import {
   type CursorStyle,
   type CursorStyleOptions,
@@ -64,8 +66,12 @@ import type {
 } from "./zig-structs.js"
 import { isBunfsPath } from "./lib/bunfs.js"
 
-const nativePackage = await import(`@opentui/core-${process.platform}-${process.arch}`)
-let targetLibPath = nativePackage.default
+const nativePackageName = `@opentui/core-${process.platform}-${process.arch}`
+const nativePackageEntryPath = fileURLToPath(import.meta.resolve(nativePackageName))
+const nativeLibraryFileName =
+  process.platform === "darwin" ? "libopentui.dylib" : process.platform === "win32" ? "opentui.dll" : "libopentui.so"
+
+let targetLibPath = join(dirname(nativePackageEntryPath), nativeLibraryFileName)
 
 if (isBunfsPath(targetLibPath)) {
   targetLibPath = targetLibPath.replace("../", "")
