@@ -7,6 +7,7 @@ import {
   type CliRendererFrameEvent,
 } from "../renderer.js"
 import { calculateRenderGeometry } from "../lib/render-geometry.js"
+import { resolveSplitFooterSizing } from "../lib/split-footer-auto-layout.js"
 import { resolveRenderLib, type NativeRenderStats } from "../zig.js"
 import { createMockKeys } from "./mock-keys.js"
 import { createMockMouse } from "./mock-mouse.js"
@@ -389,7 +390,7 @@ async function setupTestRenderer(config: TestRendererOptions) {
   const height = config.height || config.stdout?.rows || process.stdout.rows || 24
   const stdout = config.stdout || (new TestWriteStream(width, height) as unknown as NodeJS.WriteStream)
   const screenMode = config.screenMode ?? "alternate-screen"
-  const footerHeight = config.footerHeight ?? 12
+  const footerHeight = resolveSplitFooterSizing(screenMode, config).height
   const geometry = calculateRenderGeometry(screenMode, width, height, footerHeight)
 
   const ziglib = resolveRenderLib()

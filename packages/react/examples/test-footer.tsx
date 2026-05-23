@@ -130,7 +130,7 @@ async function main() {
   const renderer = await createCliRenderer({
     screenMode: "split-footer",
     externalOutputMode: "capture-stdout",
-    footerHeight: 1,
+    footerHeight: "auto",
     useMouse: true,
     clearOnShutdown: false,
     exitOnCtrlC: false,
@@ -143,7 +143,6 @@ async function main() {
   let rowCount = 1
 
   function renderFooter() {
-    renderer.footerHeight = rowCount
     root.render(<SplitFooterProbe rowCount={rowCount} />)
   }
 

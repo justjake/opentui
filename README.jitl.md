@@ -6,6 +6,7 @@
 > - `await writeReactToScrollback(renderer, <View />)` helper for split-footer mode.
 > - `CliRenderEvents.RAW_MOUSE` and React `useRawMouse(event => ...)` expose parsed terminal mouse events relative to the screen rather than the renderer's coordinate system.
 > - `clearOnShutdown: false` preserves visible main-screen/split-footer content and scrollback on shutdown.
+> - `footerHeight: "auto"` resolves split-footer height from the committed Yoga/Flexbox layout tree, clamped by `minFooterHeight` and `maxFooterHeight`.
 > - Changes to `split-footer` screen mode:
 >
 > ```typescript
