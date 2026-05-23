@@ -123,7 +123,13 @@ export interface CliRendererConfig {
   /** Clean up on these signals. Defaults to the common termination signals. */
   exitSignals?: NodeJS.Signals[]
 
-  /** Clear owned screen regions on suspend/destroy. Defaults to true. */
+  /**
+   * Clear owned main-screen and split-footer regions on suspend/destroy.
+   *
+   * When false, shutdown preserves visible main-screen/split-footer content and
+   * scrollback, while still restoring terminal input and cursor modes. Defaults
+   * to true.
+   */
   clearOnShutdown?: boolean
 
   /** Forward these env var names to native terminal detection. */
