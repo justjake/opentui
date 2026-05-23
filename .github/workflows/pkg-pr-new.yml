@@ -10,6 +10,7 @@ jobs:
   publish:
     name: Publish Preview
     if: |
+      github.repository == 'anomalyco/opentui' &&
       github.event.issue.pull_request &&
       github.event.issue.state == 'open' &&
       (contains(github.event.comment.body, ' /pkg-preview') ||
