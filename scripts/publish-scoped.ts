@@ -58,12 +58,7 @@ const rootDir = resolve(__dirname, "..")
 
 const PUBLISHED_PACKAGE_DIRS = ["core", "qrcode", "react", "solid", "keymap"] as const
 const TEXT_EXTENSIONS = new Set([".cjs", ".css", ".d.ts", ".js", ".json", ".map", ".md", ".mjs", ".ts", ".txt"])
-const README_NOTICE = [
-  "> Experimental build of OpenTUI for Node.js from [github.com/justjake/opentui](https://github.com/justjake/opentui).",
-  ">",
-  "> Published under `@jitl/*` until the Node.js support branch is upstreamed.",
-  "",
-].join("\n")
+const README_NOTICE = readFileSync(join(rootDir, "README.jitl.md"), "utf8")
 
 function parseArgs(): Options {
   const options: Options = {
