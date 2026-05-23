@@ -1251,6 +1251,54 @@ describe("renderer handleMouseData split height", () => {
     }
   })
 
+  test("terminal-native deferred newline uses the current split render offset for mouse coordinates", async () => {
+    const setup = await createTestRenderer({
+      width: 40,
+      height: baseHeight,
+      screenMode: "split-footer",
+      footerHeight: splitHeight,
+      externalOutputMode: "capture-stdout",
+      externalOutputRendering: "terminal-native",
+      consoleMode: "disabled",
+    })
+
+    const nativeRenderer = setup.renderer
+    const nativeMouse = setup.mockMouse
+
+    try {
+      const target = new TestRenderable(nativeRenderer, {
+        id: "split-terminal-native-target",
+        position: "absolute",
+        left: 2,
+        top: 1,
+        width: 6,
+        height: 3,
+      })
+      nativeRenderer.root.add(target)
+      await setup.renderOnce()
+
+      ;(nativeRenderer as any).stdout.write("line-1\n")
+      await setup.renderOnce()
+
+      const renderOffset = (nativeRenderer as any).renderOffset
+      expect(renderOffset).toBeLessThan(baseHeight - splitHeight)
+
+      let downEvent: MouseEvent | null = null
+      target.onMouseDown = (event) => {
+        downEvent = event
+      }
+
+      await nativeMouse.click(target.x + 1, baseHeight - splitHeight + target.y + 1)
+      expect(downEvent).toBeNull()
+
+      await nativeMouse.click(target.x + 1, renderOffset + target.y + 1)
+      expect(downEvent).not.toBeNull()
+      expect(downEvent!.y).toBe(target.y + 1)
+    } finally {
+      nativeRenderer.destroy()
+    }
+  })
+
   test("split height clamps to terminal height before applying mouse offsets", async () => {
     const requestedFooterHeight = 8
     const terminalHeight = 5
