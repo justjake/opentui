@@ -10,6 +10,7 @@ PACKAGE_PREFIX="${NPM_PACKAGE_PREFIX:-opentui-}"
 RELEASE_TYPE=""
 VERSION=""
 TAG="${NPM_TAG:-}"
+RETAG_TARGET_TAG=""
 DRY_RUN="${DRY_RUN:-false}"
 SKIP_TESTS="${SKIP_TESTS:-false}"
 KEEP_VERSION_CHANGES="${KEEP_VERSION_CHANGES:-false}"
@@ -26,6 +27,8 @@ Options:
   --scope <scope>           Target npm scope. Defaults to @jitl or NPM_SCOPE.
   --package-prefix <text>   Prefix for package names. Defaults to opentui- or NPM_PACKAGE_PREFIX.
   --tag <tag>               Override the npm dist-tag planned by --type.
+  --retag <tag>             Move the already-published package version from --tag to this npm dist-tag.
+  --version <version>       With --retag, retag this exact version instead of resolving --tag on core.
   --dry-run                 Build and run npm publish --dry-run.
   --skip-tests              Build and publish without running tests.
   --keep-version-changes    Leave package.json and bun.lock version edits in the worktree.
@@ -40,6 +43,11 @@ Release types:
   stable                    Publish package.json version to the latest tag.
   next                      Publish package.json version + -next.<sha> to the next tag.
   branch                    Publish package.json version + -branch-<branch>-<sha> to the experimental tag.
+
+Retag examples:
+  scripts/jitl-build-test-publish.sh --type next --retag latest --dry-run
+  scripts/jitl-build-test-publish.sh --type next --retag latest
+  scripts/jitl-build-test-publish.sh --type next --tag next --retag latest --version 0.2.15-next.abcdef0
 USAGE
 }
 
@@ -75,6 +83,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag=*)
       TAG="${1#--tag=}"
+      shift
+      ;;
+    --retag)
+      RETAG_TARGET_TAG="${2:-}"
+      shift 2
+      ;;
+    --retag=*)
+      RETAG_TARGET_TAG="${1#--retag=}"
+      shift
+      ;;
+    --version)
+      VERSION="${2:-}"
+      shift 2
+      ;;
+    --version=*)
+      VERSION="${1#--version=}"
       shift
       ;;
     --dry-run)
@@ -115,6 +139,16 @@ if [[ -n "${PACKAGE_PREFIX}" && ! "${PACKAGE_PREFIX}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.
   exit 1
 fi
 
+if [[ -n "${VERSION}" && -z "${RETAG_TARGET_TAG}" ]]; then
+  echo "--version is only supported with --retag" >&2
+  exit 1
+fi
+
+if [[ -n "${RETAG_TARGET_TAG}" && ! "${RETAG_TARGET_TAG}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+  echo "Invalid retag target: ${RETAG_TARGET_TAG}" >&2
+  exit 1
+fi
+
 case "${RELEASE_TYPE}" in
   stable | next | branch)
     ;;
@@ -129,6 +163,69 @@ case "${RELEASE_TYPE}" in
     exit 1
     ;;
 esac
+
+cd "${REPO_ROOT}"
+
+if [[ -n "${RETAG_TARGET_TAG}" ]]; then
+  for tool in bun npm; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+      echo "Missing required tool: ${tool}" >&2
+      exit 1
+    fi
+  done
+
+  case "${RELEASE_TYPE}" in
+    stable)
+      TAG="${TAG:-latest}"
+      ;;
+    next)
+      TAG="${TAG:-next}"
+      ;;
+    branch)
+      TAG="${TAG:-experimental}"
+      ;;
+  esac
+
+  echo "Retagging plan:"
+  echo "  scope: ${SCOPE}"
+  echo "  source scope: ${SOURCE_SCOPE}"
+  echo "  package prefix: ${PACKAGE_PREFIX}"
+  echo "  type: ${RELEASE_TYPE}"
+  echo "  source npm tag: ${TAG}"
+  if [[ -n "${VERSION}" ]]; then
+    echo "  version: ${VERSION}"
+  else
+    echo "  version: resolved from ${SCOPE}/${PACKAGE_PREFIX}core@${TAG}"
+  fi
+  echo "  target npm tag: ${RETAG_TARGET_TAG}"
+  echo "  dry run: ${DRY_RUN}"
+  echo
+
+  RETAG_ARGS=(
+    "scripts/publish-scoped.ts"
+    "--scope"
+    "${SCOPE}"
+    "--source-scope"
+    "${SOURCE_SCOPE}"
+    "--package-prefix"
+    "${PACKAGE_PREFIX}"
+    "--tag"
+    "${TAG}"
+    "--retag"
+    "${RETAG_TARGET_TAG}"
+  )
+
+  if [[ -n "${VERSION}" ]]; then
+    RETAG_ARGS+=("--version" "${VERSION}")
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    RETAG_ARGS+=("--dry-run")
+  fi
+
+  bun "${RETAG_ARGS[@]}"
+  exit 0
+fi
 
 for tool in bun git node npm zig; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
@@ -211,8 +308,6 @@ cleanup() {
 }
 
 trap cleanup EXIT
-
-cd "${REPO_ROOT}"
 
 for file in "${VERSION_FILES[@]}"; do
   if [[ ! -f "${file}" ]]; then
