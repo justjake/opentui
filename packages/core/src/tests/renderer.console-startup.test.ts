@@ -148,7 +148,7 @@ test("CliRenderer applies explicit screen and output modes", async () => {
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
-    capturedStdoutMode: "passthrough",
+    externalOutputRendering: "terminal-native",
     consoleMode: "disabled",
   })
 
@@ -157,7 +157,7 @@ test("CliRenderer applies explicit screen and output modes", async () => {
   expect(renderer.screenMode).toBe("split-footer")
   expect(renderer.footerHeight).toBe(6)
   expect(renderer.externalOutputMode).toBe("capture-stdout")
-  expect(renderer.capturedStdoutMode).toBe("passthrough")
+  expect(renderer.externalOutputRendering).toBe("terminal-native")
   expect(renderer.consoleMode).toBe("disabled")
 })
 
@@ -2031,7 +2031,7 @@ test("CliRenderer split-footer passthrough captured stdout preserves logical wri
     screenMode: "split-footer",
     footerHeight: 3,
     externalOutputMode: "capture-stdout",
-    capturedStdoutMode: "passthrough",
+    externalOutputRendering: "terminal-native",
     consoleMode: "disabled",
   })
 
@@ -2064,7 +2064,7 @@ test("CliRenderer split-footer captures configured stderr stream", async () => {
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
-    captureStderr: stderr,
+    externalOutputCaptureStderr: stderr,
     consoleMode: "disabled",
   })
 
@@ -2083,7 +2083,7 @@ test("CliRenderer split-footer captures configured stderr stream", async () => {
   stderr.write("stderr-line\n")
   await result.renderOnce()
 
-  expect(renderer.captureStderr).toBe(true)
+  expect(renderer.externalOutputCaptureStderr).toBe(true)
   expect(splitCommitSpy).toHaveBeenCalledTimes(2)
   expect(payloads[0]).toContain("stdout-line")
   expect(payloads[1]).toContain("stderr-line")
