@@ -1,13 +1,5 @@
-let mod: typeof import("bun-ffi-structs")
+import { defineEnum as defineEnumImpl, defineStruct as defineStructImpl } from "./node22-bun-ffi-structs.js"
+import type { defineEnum as DefineEnum, defineStruct as DefineStruct } from "bun-ffi-structs"
 
-try {
-  mod = await import("bun-ffi-structs")
-} catch (error) {
-  if (process.versions.bun) {
-    throw error
-  }
-  mod = (await import("./node22-bun-ffi-structs.js")) as typeof import("bun-ffi-structs")
-}
-
-export const defineStruct = mod.defineStruct
-export const defineEnum = mod.defineEnum
+export const defineStruct = defineStructImpl as typeof DefineStruct
+export const defineEnum = defineEnumImpl as typeof DefineEnum
