@@ -1,8 +1,47 @@
+import { EventEmitter } from "events"
 import { ANSI } from "./ansi.js"
+import { OptimizedBuffer } from "./buffer.js"
+import { TerminalConsole, capture, type ConsoleOptions } from "./console.js"
+import {
+  createCapturedStdoutPassthroughCommit,
+  type CapturedStdoutPassthroughCommit,
+  type ExternalOutputRendering,
+} from "./lib/captured-stdout-passthrough.js"
+import { Clipboard, type ClipboardTarget } from "./lib/clipboard.js"
+import { SystemClock, type Clock, type TimerHandle } from "./lib/clock.js"
+import { env, registerEnvVar } from "./lib/env.js"
+import { hasSameOutputDestination } from "./lib/external-output-destination.js"
+import { matchesKeyBinding } from "./lib/keybinding.internal.js"
+import { InternalKeyHandler, KeyHandler } from "./lib/KeyHandler.js"
+import { getObjectsInViewport } from "./lib/objects-in-viewport.js"
+import { type MouseEventType, type RawMouseEvent, type ScrollInfo } from "./lib/parse.mouse.js"
+import { calculateRenderGeometry } from "./lib/render-geometry.js"
+import { RGBA, parseColor, type ColorInput } from "./lib/RGBA.js"
+import { Selection } from "./lib/selection.js"
+import { destroySingleton, hasSingleton, singleton } from "./lib/singleton.js"
+import { StdinParser, type StdinEvent, type StdinParserProtocolContext } from "./lib/stdin-parser.js"
+import {
+  isCapabilityResponse,
+  isPixelResolutionResponse,
+  parsePixelResolution,
+} from "./lib/terminal-capability-detection.js"
+import {
+  buildTerminalPaletteSignature,
+  createTerminalPalette,
+  normalizeTerminalPalette,
+  type GetPaletteOptions,
+  type TerminalColors,
+  type TerminalPaletteDetector,
+} from "./lib/terminal-palette.js"
+import { getTreeSitterClient } from "./lib/tree-sitter/index.js"
+import type { Pointer } from "./platform/ffi.js"
+import { sleep } from "./platform/runtime.js"
 import { Renderable, RootRenderable } from "./Renderable.js"
 import { BoxRenderable } from "./renderables/Box.js"
 import { CodeRenderable } from "./renderables/Code.js"
+import { isEditBufferRenderable, type EditBufferRenderable } from "./renderables/EditBufferRenderable.js"
 import { TextRenderable } from "./renderables/Text.js"
+import { RendererThemeMode } from "./renderer-theme-mode.js"
 import {
   DebugOverlayCorner,
   type CursorStyleOptions,
@@ -13,47 +52,11 @@ import {
   type ViewportBounds,
   type WidthMethod,
 } from "./types.js"
-import { RGBA, parseColor, type ColorInput } from "./lib/RGBA.js"
-import type { Pointer } from "./platform/ffi.js"
-import { sleep } from "./platform/runtime.js"
-import { OptimizedBuffer } from "./buffer.js"
 import { resolveRenderLib, type NativeRenderStats, type RenderLib } from "./zig.js"
-import { TerminalConsole, type ConsoleOptions, capture } from "./console.js"
-import { type MouseEventType, type RawMouseEvent, type ScrollInfo } from "./lib/parse.mouse.js"
-import { Selection } from "./lib/selection.js"
-import { Clipboard, type ClipboardTarget } from "./lib/clipboard.js"
-import { EventEmitter } from "events"
-import { destroySingleton, hasSingleton, singleton } from "./lib/singleton.js"
-import { getObjectsInViewport } from "./lib/objects-in-viewport.js"
-import { KeyHandler, InternalKeyHandler } from "./lib/KeyHandler.js"
-import { isEditBufferRenderable, type EditBufferRenderable } from "./renderables/EditBufferRenderable.js"
-import { env, registerEnvVar } from "./lib/env.js"
-import { getTreeSitterClient } from "./lib/tree-sitter/index.js"
-import {
-  buildTerminalPaletteSignature,
-  createTerminalPalette,
-  normalizeTerminalPalette,
-  type TerminalPaletteDetector,
-  type TerminalColors,
-  type GetPaletteOptions,
-} from "./lib/terminal-palette.js"
-import { calculateRenderGeometry } from "./lib/render-geometry.js"
-import {
-  isCapabilityResponse,
-  isPixelResolutionResponse,
-  parsePixelResolution,
-} from "./lib/terminal-capability-detection.js"
-import { type Clock, type TimerHandle, SystemClock } from "./lib/clock.js"
-import { StdinParser, type StdinEvent, type StdinParserProtocolContext } from "./lib/stdin-parser.js"
-import { matchesKeyBinding } from "./lib/keybinding.internal.js"
-import { RendererThemeMode } from "./renderer-theme-mode.js"
-import {
-  createCapturedStdoutPassthroughCommit,
-  type ExternalOutputRendering,
-  type CapturedStdoutPassthroughCommit,
-} from "./lib/captured-stdout-passthrough.js"
 
 export type { ExternalOutputRendering } from "./lib/captured-stdout-passthrough.js"
+
+export type ExternalOutputCaptureStderr = "auto" | "always" | "never" | NodeJS.WriteStream
 
 registerEnvVar({
   name: "OTUI_DUMP_CAPTURES",
@@ -171,10 +174,34 @@ export interface CliRendererConfig {
   /** Choose what happens to writes that go through `stdout.write`. */
   externalOutputMode?: ExternalOutputMode
 
-  /** Also capture writes that go through `stderr.write`. Pass a stream to capture that stream. */
-  externalOutputCaptureStderr?: boolean | NodeJS.WriteStream
+  /**
+   * Choose whether writes to `stderr.write` join captured external output to
+   * stdout.
+   *
+   * - "auto": capture stderr only when external output capture is active and
+   *    stderr appears to write to stdout's destination.
+   * - "always": capture process.stderr whenever external output capture is active.
+   * - "never": leave stderr alone. (Upstream @opentui/core behavior)
+   * - WriteStream: capture the provided stream whenever external output capture
+   *   is active.
+   *
+   * Defaults to "auto".
+   */
+  externalOutputCaptureStderr?: ExternalOutputCaptureStderr
 
-  /** Choose how captured external output is rendered in split-footer mode. Defaults to "emulated". */
+  /**
+   * Choose how captured external output is rendered in split-footer mode.
+   *
+   * - "emulated": render captured output through OpenTUI layout engine. ANSI
+   *   color/style sequences are currently unhandled and produce rendering
+   *   artifacts. (Upstream @opentui/core behavior)
+   * - "terminal-native": write captured output unmodified to its destination,
+   *   while accounting for its layout. This preserves terminal-native ANSI
+   *   behavior and wrapping, but some ANSI sequences may produce unexpected
+   *   behavior.
+   *
+   * Defaults to "terminal-native".
+   */
   externalOutputRendering?: ExternalOutputRendering
 
   /** Choose what the built-in console overlay does. */
@@ -365,23 +392,54 @@ function resolveModes(config: CliRendererConfig): {
     screenMode,
     footerHeight,
     externalOutputMode,
-    externalOutputRendering: config.externalOutputRendering ?? "emulated",
+    externalOutputRendering: config.externalOutputRendering ?? "terminal-native",
   }
 }
 
-function resolveExternalOutputCaptureStderr(config: CliRendererConfig): {
+function resolveExternalOutputCaptureStderr(
+  externalOutputCaptureStderr: ExternalOutputCaptureStderr,
+  stdout: NodeJS.WriteStream,
+  externalOutputMode: ExternalOutputMode,
+): {
   enabled: boolean
   stream: NodeJS.WriteStream
 } {
-  const externalOutputCaptureStderr = config.externalOutputCaptureStderr
-  if (externalOutputCaptureStderr && typeof externalOutputCaptureStderr !== "boolean") {
-    return { enabled: true, stream: externalOutputCaptureStderr }
+  if (externalOutputMode !== "capture-stdout") {
+    return {
+      enabled: false,
+      stream: process.stderr,
+    }
   }
 
-  return {
-    enabled: externalOutputCaptureStderr === true,
-    stream: process.stderr,
+  if (typeof externalOutputCaptureStderr !== "string") {
+    return {
+      enabled: true,
+      stream: externalOutputCaptureStderr,
+    }
   }
+
+  if (externalOutputCaptureStderr === "always") {
+    return {
+      enabled: true,
+      stream: process.stderr,
+    }
+  }
+
+  if (externalOutputCaptureStderr === "never") {
+    return {
+      enabled: false,
+      stream: process.stderr,
+    }
+  }
+
+  if (externalOutputCaptureStderr === "auto") {
+    return {
+      enabled: hasSameOutputDestination(stdout, process.stderr),
+      stream: process.stderr,
+    }
+  }
+
+  throw new Error(`Invalid externalOutputCaptureStderr value: ${externalOutputCaptureStderr}`)
 }
 
 type ExternalOutputSnapshotCommit = {
@@ -854,7 +912,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private _screenMode: ScreenMode = "alternate-screen"
   private _footerHeight: number = DEFAULT_FOOTER_HEIGHT
   private _externalOutputMode: ExternalOutputMode = "passthrough"
-  private _externalOutputRendering: ExternalOutputRendering = "emulated"
+  private _externalOutputRendering: ExternalOutputRendering = "terminal-native"
+  private _externalOutputCaptureStderrConfig: ExternalOutputCaptureStderr = "auto"
   private _externalOutputCaptureStderr: boolean = false
   private clearOnShutdown: boolean = true
   private _suspendedMouseEnabled: boolean = false
@@ -1008,11 +1067,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     this.stdin = stdin
     this.stdout = stdout
-    const externalOutputCaptureStderr = resolveExternalOutputCaptureStderr(config)
-    this.stderr = externalOutputCaptureStderr.stream
-    this.realStdoutWrite = stdout.write
-    this.realStderrWrite = this.stderr.write
-    this._externalOutputCaptureStderr = externalOutputCaptureStderr.enabled
     this.lib = lib
     this._terminalWidth = stdout.columns ?? width
     this._terminalHeight = stdout.rows ?? height
@@ -1020,6 +1074,16 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const { screenMode, footerHeight, externalOutputMode, externalOutputRendering } = resolveModes(config)
     this._externalOutputMode = externalOutputMode
     this._externalOutputRendering = externalOutputRendering
+    this._externalOutputCaptureStderrConfig = config.externalOutputCaptureStderr ?? "auto"
+    const externalOutputCaptureStderr = resolveExternalOutputCaptureStderr(
+      this._externalOutputCaptureStderrConfig,
+      stdout,
+      externalOutputMode,
+    )
+    this.stderr = externalOutputCaptureStderr.stream
+    this.realStdoutWrite = stdout.write
+    this.realStderrWrite = this.stderr.write
+    this._externalOutputCaptureStderr = externalOutputCaptureStderr.enabled
 
     const initialGeometry = calculateRenderGeometry(screenMode, this._terminalWidth, this._terminalHeight, footerHeight)
 
@@ -1563,8 +1627,25 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private applyExternalOutputMode(mode: ExternalOutputMode): void {
     this._externalOutputMode = mode
     this.stdout.write = mode === "capture-stdout" ? this.interceptStdoutWrite : this.realStdoutWrite
+    this.refreshExternalOutputCaptureStderr(mode)
+  }
+
+  private refreshExternalOutputCaptureStderr(mode: ExternalOutputMode): void {
     if (this._externalOutputCaptureStderr) {
-      this.stderr.write = mode === "capture-stdout" ? this.interceptStderrWrite : this.realStderrWrite
+      this.stderr.write = this.realStderrWrite
+    }
+
+    const externalOutputCaptureStderr = resolveExternalOutputCaptureStderr(
+      this._externalOutputCaptureStderrConfig,
+      this.stdout,
+      mode,
+    )
+    this.stderr = externalOutputCaptureStderr.stream
+    this.realStderrWrite = this.stderr.write
+    this._externalOutputCaptureStderr = externalOutputCaptureStderr.enabled
+
+    if (this._externalOutputCaptureStderr) {
+      this.stderr.write = this.interceptStderrWrite
     }
   }
 

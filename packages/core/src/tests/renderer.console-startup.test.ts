@@ -192,6 +192,7 @@ test("CliRenderer clamps split footer height to terminal height at startup", asy
   renderer = result.renderer
 
   expect(renderer.footerHeight).toBe(12)
+  expect(renderer.externalOutputRendering).toBe("terminal-native")
   expect(renderer.height).toBe(5)
   expect((renderer as any)._splitHeight).toBe(5)
   expect((renderer as any).renderOffset).toBe(0)
@@ -240,6 +241,7 @@ test("CliRenderer writeToScrollback enqueues snapshot commits to native", async 
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -276,6 +278,7 @@ test("CliRenderer writeToScrollback passes width and widthMethod to the scrollba
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -320,6 +323,7 @@ test("CliRenderer writeToScrollback runs snapshot teardown after enqueueing", as
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -361,6 +365,7 @@ test("CliRenderer writeToScrollback runs snapshot teardown when snapshot validat
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -401,6 +406,7 @@ test("CliRenderer preserves append order when writeToScrollback and stdout captu
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -436,6 +442,7 @@ test("CliRenderer writeToScrollback bypasses global console capture singleton", 
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -454,6 +461,7 @@ test("CliRenderer flushes captured output before switching to passthrough in spl
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -487,6 +495,7 @@ test("CliRenderer drains all pending split commits before switching to passthrou
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -514,6 +523,7 @@ test("CliRenderer keeps stdout captured until a deferred passthrough switch drai
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -558,6 +568,7 @@ test("CliRenderer drains deferred passthrough output before leaving split-footer
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -646,6 +657,7 @@ test("CliRenderer preserves split render offset when switching to passthrough", 
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -690,6 +702,7 @@ test("CliRenderer flushes pending split output before resize applies new geometr
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -728,6 +741,7 @@ test("CliRenderer flushes pending writeToScrollback output before resize applies
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -973,6 +987,7 @@ test("CliRenderer preserves captured split output when switching output mode whi
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1007,6 +1022,7 @@ test("CliRenderer preserves captured split output until startup cursor seed unbl
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     clock,
   })
@@ -1046,6 +1062,7 @@ test("CliRenderer flushes pending split output on suspend even when startup curs
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1158,6 +1175,7 @@ test("CliRenderer destroy flushes split output before clearing split footer surf
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1246,6 +1264,7 @@ test("CliRenderer destroy does not clear split footer surface when clearOnShutdo
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     clearOnShutdown: false,
   })
@@ -1335,6 +1354,7 @@ test("CliRenderer split-footer captures direct console writes when console mode 
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1358,6 +1378,7 @@ test("CliRenderer split-footer renderNative does not call TypeScript flush path"
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1376,6 +1397,7 @@ test("CliRenderer split-footer renderNative repaints footer frame with no pendin
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1395,6 +1417,7 @@ test("CliRenderer split-footer forwards forced repaint flag to final pending com
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1423,6 +1446,7 @@ test("CliRenderer split-footer defers first native frame while startup cursor se
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1451,6 +1475,7 @@ test("CliRenderer split-footer starts in settling phase and then pins as output 
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1958,6 +1983,7 @@ test("CliRenderer split-footer commits only unpublished captured output chunks",
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1998,6 +2024,7 @@ test("CliRenderer split-footer routes captured output through snapshot native co
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -2064,6 +2091,7 @@ test("CliRenderer split-footer captures configured stderr stream", async () => {
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     externalOutputCaptureStderr: stderr,
     consoleMode: "disabled",
   })
@@ -2090,6 +2118,98 @@ test("CliRenderer split-footer captures configured stderr stream", async () => {
 
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   splitCommitSpy.mockRestore()
+})
+
+test("CliRenderer does not capture stderr when external output mode is passthrough", async () => {
+  const stderrWrite = () => true
+  const stderr = {
+    write: stderrWrite,
+  } as any as NodeJS.WriteStream
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "passthrough",
+    externalOutputCaptureStderr: stderr,
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
+  expect(stderr.write).toBe(stderrWrite)
+})
+
+test("CliRenderer does not inspect stderr destination while external output mode is passthrough", async () => {
+  const stdout = {
+    columns: 40,
+    rows: 10,
+    write: () => true,
+    get fd() {
+      throw new Error("stdout fd should not be inspected")
+    },
+  } as any as NodeJS.WriteStream
+  const result = await createTestRenderer({
+    stdout,
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "passthrough",
+    externalOutputCaptureStderr: "auto",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
+})
+
+test("CliRenderer auto-captures stderr only when it shares stdout's destination", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputCaptureStderr: "auto",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
+  renderer.destroy()
+
+  const sharedResult = await createTestRenderer({
+    stdout: process.stderr,
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputCaptureStderr: "auto",
+    consoleMode: "disabled",
+  })
+
+  renderer = sharedResult.renderer
+  expect(renderer.externalOutputCaptureStderr).toBe(true)
+})
+
+test("CliRenderer never captures stderr when externalOutputCaptureStderr is never", async () => {
+  const result = await createTestRenderer({
+    stdout: process.stderr,
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputCaptureStderr: "never",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
 })
 
 test("CliRenderer split-footer native scrollback tracks wrapped tail state across commits", async () => {
