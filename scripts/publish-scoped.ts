@@ -33,6 +33,8 @@ interface Options {
   keepStage: boolean
   skipExisting: boolean
   tag?: string
+  retag?: string
+  version?: string
   access: string
 }
 
@@ -142,6 +144,26 @@ function parseArgs(): Options {
       continue
     }
 
+    if (arg === "--retag") {
+      options.retag = args[++i] ?? ""
+      continue
+    }
+
+    if (arg.startsWith("--retag=")) {
+      options.retag = arg.slice("--retag=".length)
+      continue
+    }
+
+    if (arg === "--version") {
+      options.version = args[++i] ?? ""
+      continue
+    }
+
+    if (arg.startsWith("--version=")) {
+      options.version = arg.slice("--version=".length)
+      continue
+    }
+
     if (arg === "--pack-destination") {
       options.packDestination = args[++i]
       continue
@@ -187,6 +209,8 @@ function parseArgs(): Options {
           "  --source-scope <scope>   Source npm scope to rewrite. Defaults to @opentui.",
           "  --package-prefix <text>  Prefix for unscoped package names. Example: opentui-.",
           "  --tag <tag>              npm dist-tag for publish.",
+          "  --retag <tag>            Move the already-published package version to this npm dist-tag.",
+          "  --version <version>      Package version for --retag. Defaults to resolving --tag on the core package.",
           "  --pack-destination <dir> Create npm tarballs in this directory before publishing.",
           "  --pack-only              Stage and pack packages without publishing.",
           "  --repository-url <url>   Repository URL for staged package.json files.",
@@ -210,6 +234,18 @@ function parseArgs(): Options {
   }
   if (!options.repositoryUrl) {
     throw new Error("Missing repository URL")
+  }
+  if (options.retag === "") {
+    throw new Error("--retag requires a target npm tag")
+  }
+  if (options.version === "") {
+    throw new Error("--version requires a package version")
+  }
+  if (options.retag && !options.version && !options.tag) {
+    throw new Error("--retag requires --tag or --version")
+  }
+  if (options.retag && options.tag === options.retag) {
+    throw new Error("--retag target must be different from --tag")
   }
   if (options.packOnly && !options.packDestination) {
     throw new Error("--pack-only requires --pack-destination")
@@ -241,6 +277,10 @@ function readPackageJson(packageDir: string): PackageJson {
 
 function packageDirForName(baseDir: string, packageName: string): string {
   return join(baseDir, ...packageName.split("/"))
+}
+
+function rewrittenPackageName(packageDirName: string, options: Options): string {
+  return `${options.targetScope}/${options.packagePrefix}${packageDirName}`
 }
 
 function shouldRewriteFile(filePath: string): boolean {
@@ -492,6 +532,132 @@ function packageVersionExists(
   throw new Error(`Unable to check ${packageName}@${version} on npm:\n${stderr.trim()}`)
 }
 
+function npmViewJson(spec: string, field: string | undefined, stageRoot: string, npmUserConfig?: string): unknown {
+  const args = ["view", spec]
+  if (field) {
+    args.push(field)
+  }
+  args.push("--json")
+
+  const result = spawnSync("npm", args, {
+    cwd: stageRoot,
+    env: npmEnv(stageRoot, npmUserConfig),
+  })
+
+  if (result.status !== 0) {
+    const stderr = result.stderr.toString().trim()
+    throw new Error(`Unable to read npm metadata for ${spec}${field ? ` ${field}` : ""}:\n${stderr}`)
+  }
+
+  const output = result.stdout.toString().trim()
+  return output ? JSON.parse(output) : null
+}
+
+function resolveRetagVersion(options: Options, stageRoot: string, npmUserConfig?: string): string {
+  if (options.version) {
+    return options.version
+  }
+
+  if (!options.tag) {
+    throw new Error("--retag requires --tag or --version")
+  }
+
+  const corePackageName = rewrittenPackageName("core", options)
+  const version = npmViewJson(`${corePackageName}@${options.tag}`, "version", stageRoot, npmUserConfig)
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(`Unable to resolve ${corePackageName}@${options.tag} to a package version`)
+  }
+  return version
+}
+
+function collectRetagPackageNames(
+  options: Options,
+  version: string,
+  stageRoot: string,
+  npmUserConfig?: string,
+): string[] {
+  const packageNames = PUBLISHED_PACKAGE_DIRS.map((packageDirName) => rewrittenPackageName(packageDirName, options))
+  const corePackageName = rewrittenPackageName("core", options)
+  const optionalDependencies = npmViewJson(
+    `${corePackageName}@${version}`,
+    "optionalDependencies",
+    stageRoot,
+    npmUserConfig,
+  )
+  const nativePackageNames =
+    optionalDependencies && typeof optionalDependencies === "object"
+      ? Object.keys(optionalDependencies).filter((name) =>
+          name.startsWith(`${options.targetScope}/${options.packagePrefix}core-`),
+        )
+      : []
+
+  if (nativePackageNames.length === 0) {
+    throw new Error(
+      `No native ${options.targetScope}/${options.packagePrefix}core-* packages found on ${corePackageName}@${version}`,
+    )
+  }
+
+  return [...nativePackageNames.sort(), ...packageNames]
+}
+
+function retagPackage(
+  packageName: string,
+  version: string,
+  targetTag: string,
+  options: Options,
+  stageRoot: string,
+  npmUserConfig?: string,
+): void {
+  console.log(`\n${options.dryRun ? "Would tag" : "Tagging"} ${packageName}@${version} as ${targetTag}`)
+
+  if (options.dryRun) {
+    return
+  }
+
+  const result = runNpm(
+    ["dist-tag", "add", `${packageName}@${version}`, targetTag],
+    stageRoot,
+    stageRoot,
+    npmUserConfig,
+  )
+  if (result.status !== 0) {
+    throw new Error(`Failed to add dist-tag ${targetTag} to ${packageName}@${version}`)
+  }
+}
+
+function retagPackages(options: Options, stageRoot: string, npmUserConfig?: string): void {
+  if (!options.retag) {
+    throw new Error("Missing retag target")
+  }
+
+  const version = resolveRetagVersion(options, stageRoot, npmUserConfig)
+  const packageNames = collectRetagPackageNames(options, version, stageRoot, npmUserConfig)
+
+  console.log(`Retagging ${packageNames.length} packages for ${options.targetScope}:`)
+  console.log(`  version: ${version}`)
+  if (options.tag) {
+    console.log(`  source tag: ${options.tag}`)
+  }
+  console.log(`  target tag: ${options.retag}`)
+  console.log(`  dry run: ${options.dryRun}`)
+
+  for (const packageName of packageNames) {
+    if (!packageVersionExists(packageName, version, stageRoot, npmUserConfig)) {
+      throw new Error(`${packageName}@${version} does not exist on npm`)
+    }
+  }
+
+  if (!options.dryRun) {
+    verifyNpmAuth(stageRoot, npmUserConfig)
+  }
+
+  for (const packageName of packageNames) {
+    retagPackage(packageName, version, options.retag, options, stageRoot, npmUserConfig)
+  }
+
+  console.log(`\n${options.dryRun ? "Dry run completed" : "Retag completed"} for ${packageNames.length} packages.`)
+}
+
 function publishPackage(pkg: PublishPackage, options: Options, stageRoot: string, npmUserConfig?: string): void {
   console.log(`\n${options.dryRun ? "Checking" : "Publishing"} ${pkg.name}@${pkg.version}`)
 
@@ -528,6 +694,11 @@ function main(): void {
   const npmUserConfig = createNpmUserConfig(stageRoot)
 
   try {
+    if (options.retag) {
+      retagPackages(options, stageRoot, npmUserConfig)
+      return
+    }
+
     console.log(`Staging packages for ${options.targetScope} in ${stageRoot}`)
     const packages = collectPackages(stageRoot, options)
 
