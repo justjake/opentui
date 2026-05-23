@@ -58,14 +58,10 @@ function App() {
     if (key.name === "i") {
       setLastAction("Wrote inline continuation; starts same row only after p")
 
-      writeReactToScrollback(
-        renderer,
-        () => <text style={{ fg: "#ffa657" }}> + inline React commit</text>,
-        {
-          startOnNewLine: false,
-          trailingNewline: true,
-        },
-      )
+      writeReactToScrollback(renderer, () => <text style={{ fg: "#ffa657" }}> + inline React commit</text>, {
+        startOnNewLine: false,
+        trailingNewline: true,
+      })
     }
   })
 

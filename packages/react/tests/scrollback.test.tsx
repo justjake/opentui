@@ -54,11 +54,7 @@ describe("React scrollback", () => {
     setup = await createScrollbackRenderer()
 
     act(() => {
-      writeReactToScrollback(
-        setup!.renderer,
-        () => <text>react-line</text>,
-        { trailingNewline: false },
-      )
+      writeReactToScrollback(setup!.renderer, () => <text>react-line</text>, { trailingNewline: false })
     })
 
     const commits = setup.externalOutput.take()
@@ -108,11 +104,7 @@ describe("React scrollback", () => {
     setup = await createScrollbackRenderer()
 
     act(() => {
-      writeReactToScrollback(
-        setup!.renderer,
-        () => <Dimensions />,
-        { height: 2, trailingNewline: false },
-      )
+      writeReactToScrollback(setup!.renderer, () => <Dimensions />, { height: 2, trailingNewline: false })
     })
 
     const commits = setup.externalOutput.take()
@@ -125,15 +117,11 @@ describe("React scrollback", () => {
     setup = await createScrollbackRenderer()
 
     act(() => {
-      writeReactToScrollback(
-        setup!.renderer,
-        () => <text>inline</text>,
-        {
-          rowColumns: 6,
-          startOnNewLine: false,
-          trailingNewline: false,
-        },
-      )
+      writeReactToScrollback(setup!.renderer, () => <text>inline</text>, {
+        rowColumns: 6,
+        startOnNewLine: false,
+        trailingNewline: false,
+      })
     })
 
     const commits = setup.externalOutput.take()
