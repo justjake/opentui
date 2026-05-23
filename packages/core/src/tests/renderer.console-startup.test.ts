@@ -2026,6 +2026,44 @@ test("CliRenderer split-footer passthrough captured stdout preserves logical wri
   passthroughCommitSpy.mockRestore()
 })
 
+test("CliRenderer split-footer captures configured stderr stream", async () => {
+  const stderr = {
+    write: () => true,
+  } as any as NodeJS.WriteStream
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    captureStderr: stderr,
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const lib = (renderer as any).lib
+  const splitCommitSpy = spyOn(lib, "commitSplitFooterSnapshot")
+  const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
+  const payloads: string[] = []
+
+  lib.commitSplitFooterSnapshot = (...args: any[]) => {
+    payloads.push(new TextDecoder().decode(args[1].getRealCharBytes(true)).trim())
+    return originalCommitSplitFooterSnapshot(...args)
+  }
+
+  ;(renderer as any).stdout.write("stdout-line\n")
+  stderr.write("stderr-line\n")
+  await result.renderOnce()
+
+  expect(renderer.captureStderr).toBe(true)
+  expect(splitCommitSpy).toHaveBeenCalledTimes(2)
+  expect(payloads[0]).toContain("stdout-line")
+  expect(payloads[1]).toContain("stderr-line")
+
+  lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
+  splitCommitSpy.mockRestore()
+})
+
 test("CliRenderer split-footer native scrollback tracks wrapped tail state across commits", async () => {
   const result = await createTestRenderer({
     width: 4,
