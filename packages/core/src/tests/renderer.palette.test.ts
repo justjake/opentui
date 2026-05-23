@@ -120,7 +120,10 @@ async function createPaletteRenderer(options: Partial<TestRendererOptions> & { e
   return { renderer, mockStdin, mockStdout, writes, clock }
 }
 
-async function createSilentFollowUpPaletteRenderer(clock = new ManualClock()) {
+async function createSilentFollowUpPaletteRenderer(
+  clock = new ManualClock(),
+  options: Partial<TestRendererOptions> = {},
+) {
   const mockStdin = new EventEmitter() as any
   mockStdin.isTTY = true
   mockStdin.setRawMode = () => {}
@@ -152,6 +155,7 @@ async function createSilentFollowUpPaletteRenderer(clock = new ManualClock()) {
     stdout: mockStdout,
     clock,
     useThread: false,
+    ...options,
   })
 
   return { renderer, writes, clock }
@@ -1040,13 +1044,15 @@ describe("Palette detection while capabilities are unsettled", () => {
   test("getPalette does not wait for remote XTVERSION when local tmux env is unknown", async () => {
     const previousEnv = setCapabilityEnv({})
 
-    const { renderer, writes, clock } = await createSilentFollowUpPaletteRenderer()
+    const { renderer, writes, clock } = await createSilentFollowUpPaletteRenderer(undefined, { remote: true })
 
     try {
-      // @ts-expect-error - simulating a remote renderer without forwarded local env vars
-      renderer._remote = true
-      // @ts-expect-error - accessing private native binding for startup state setup
-      renderer._capabilities = renderer.lib.getTerminalCapabilities(renderer.rendererPtr)
+      setRendererCapabilities(renderer, {
+        in_tmux: false,
+        rgb: true,
+        ansi256: true,
+        terminal: { name: "", version: "", from_xtversion: false },
+      })
       startCapabilityDetectionWindow(renderer, clock)
 
       void renderer.getPalette({ size: 16 })
