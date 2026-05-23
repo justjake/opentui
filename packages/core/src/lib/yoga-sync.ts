@@ -145,6 +145,28 @@ type YogaLoaderModule = {
 }
 
 type LoadYoga = (module: YogaLoaderModule) => Promise<YogaLoaderModule>
+type WrapAssembly = (module: YogaLoaderModule) => typeof YogaDefault
+
+const yogaEnums = {
+  Align,
+  BoxSizing,
+  Dimension,
+  Direction,
+  Display,
+  Edge,
+  Errata,
+  ExperimentalFeature,
+  FlexDirection,
+  Gutter,
+  Justify,
+  LogLevel,
+  MeasureMode,
+  NodeType,
+  Overflow,
+  PositionType,
+  Unit,
+  Wrap,
+}
 
 function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64)
@@ -171,9 +193,17 @@ function loadYogaImplFromSource(): LoadYoga {
   return new Function(source)() as LoadYoga
 }
 
+function loadYogaWrapAssemblyFromSource(): WrapAssembly {
+  const source = readFileSync(yogaWrapAssemblyPath, "utf8")
+    .replace('import { Unit, Direction } from "./generated/YGEnums.js";', "")
+    .replace('import YGEnums from "./generated/YGEnums.js";', "")
+    .replace("export default function wrapAssembly(lib) {", "return function wrapAssembly(lib) {")
+  return new Function("Unit", "Direction", "YGEnums", source)(Unit, Direction, yogaEnums) as WrapAssembly
+}
+
 function createYoga(): typeof YogaDefault {
   const loadYogaImpl = loadYogaImplFromSource()
-  const wrapAssembly = require(yogaWrapAssemblyPath).default as (module: YogaLoaderModule) => typeof YogaDefault
+  const wrapAssembly = loadYogaWrapAssemblyFromSource()
   const wasmBytes = loadYogaWasmBytes()
   const module: YogaLoaderModule = {
     instantiateWasm(imports, receiveInstance) {
