@@ -14,7 +14,7 @@ import {
   PositionType,
   Unit,
   Wrap,
-} from "yoga-layout"
+} from "./yoga-sync.js"
 
 export type AlignString =
   | "auto"
