@@ -49,11 +49,11 @@ import { matchesKeyBinding } from "./lib/keybinding.internal.js"
 import { RendererThemeMode } from "./renderer-theme-mode.js"
 import {
   createCapturedStdoutPassthroughCommit,
-  type CapturedStdoutMode,
+  type ExternalOutputRendering,
   type CapturedStdoutPassthroughCommit,
 } from "./lib/captured-stdout-passthrough.js"
 
-export type { CapturedStdoutMode } from "./lib/captured-stdout-passthrough.js"
+export type { ExternalOutputRendering } from "./lib/captured-stdout-passthrough.js"
 
 registerEnvVar({
   name: "OTUI_DUMP_CAPTURES",
@@ -170,10 +170,10 @@ export interface CliRendererConfig {
   externalOutputMode?: ExternalOutputMode
 
   // Also capture writes that go through `stderr.write`. Pass a stream to capture that stream.
-  captureStderr?: boolean | NodeJS.WriteStream
+  externalOutputCaptureStderr?: boolean | NodeJS.WriteStream
 
-  // Choose how captured stdout is replayed in split-footer mode. Defaults to "rerendered".
-  capturedStdoutMode?: CapturedStdoutMode
+  // Choose how captured external output is rendered in split-footer mode. Defaults to "emulated".
+  externalOutputRendering?: ExternalOutputRendering
 
   // Choose what the built-in console overlay does.
   consoleMode?: ConsoleMode
@@ -339,7 +339,7 @@ function resolveModes(config: CliRendererConfig): {
   screenMode: ScreenMode
   footerHeight: number
   externalOutputMode: ExternalOutputMode
-  capturedStdoutMode: CapturedStdoutMode
+  externalOutputRendering: ExternalOutputRendering
 } {
   let screenMode = config.screenMode ?? "alternate-screen"
   if (process.env.OTUI_USE_ALTERNATE_SCREEN !== undefined) {
@@ -363,21 +363,21 @@ function resolveModes(config: CliRendererConfig): {
     screenMode,
     footerHeight,
     externalOutputMode,
-    capturedStdoutMode: config.capturedStdoutMode ?? "rerendered",
+    externalOutputRendering: config.externalOutputRendering ?? "emulated",
   }
 }
 
-function resolveCapturedStderr(config: CliRendererConfig): {
+function resolveExternalOutputCaptureStderr(config: CliRendererConfig): {
   enabled: boolean
   stream: NodeJS.WriteStream
 } {
-  const captureStderr = config.captureStderr
-  if (captureStderr && typeof captureStderr !== "boolean") {
-    return { enabled: true, stream: captureStderr }
+  const externalOutputCaptureStderr = config.externalOutputCaptureStderr
+  if (externalOutputCaptureStderr && typeof externalOutputCaptureStderr !== "boolean") {
+    return { enabled: true, stream: externalOutputCaptureStderr }
   }
 
   return {
-    enabled: captureStderr === true,
+    enabled: externalOutputCaptureStderr === true,
     stream: process.stderr,
   }
 }
@@ -852,8 +852,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private _screenMode: ScreenMode = "alternate-screen"
   private _footerHeight: number = DEFAULT_FOOTER_HEIGHT
   private _externalOutputMode: ExternalOutputMode = "passthrough"
-  private _capturedStdoutMode: CapturedStdoutMode = "rerendered"
-  private _captureStderr: boolean = false
+  private _externalOutputRendering: ExternalOutputRendering = "emulated"
+  private _externalOutputCaptureStderr: boolean = false
   private clearOnShutdown: boolean = true
   private _suspendedMouseEnabled: boolean = false
   private _previousControlState: RendererControlState = RendererControlState.IDLE
@@ -1006,18 +1006,18 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     this.stdin = stdin
     this.stdout = stdout
-    const capturedStderr = resolveCapturedStderr(config)
-    this.stderr = capturedStderr.stream
+    const externalOutputCaptureStderr = resolveExternalOutputCaptureStderr(config)
+    this.stderr = externalOutputCaptureStderr.stream
     this.realStdoutWrite = stdout.write
     this.realStderrWrite = this.stderr.write
-    this._captureStderr = capturedStderr.enabled
+    this._externalOutputCaptureStderr = externalOutputCaptureStderr.enabled
     this.lib = lib
     this._terminalWidth = stdout.columns ?? width
     this._terminalHeight = stdout.rows ?? height
     this._useThread = config.useThread === undefined ? false : config.useThread
-    const { screenMode, footerHeight, externalOutputMode, capturedStdoutMode } = resolveModes(config)
+    const { screenMode, footerHeight, externalOutputMode, externalOutputRendering } = resolveModes(config)
     this._externalOutputMode = externalOutputMode
-    this._capturedStdoutMode = capturedStdoutMode
+    this._externalOutputRendering = externalOutputRendering
 
     const initialGeometry = calculateRenderGeometry(screenMode, this._terminalWidth, this._terminalHeight, footerHeight)
 
@@ -1516,12 +1516,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return this._externalOutputMode
   }
 
-  public get capturedStdoutMode(): CapturedStdoutMode {
-    return this._capturedStdoutMode
+  public get externalOutputRendering(): ExternalOutputRendering {
+    return this._externalOutputRendering
   }
 
-  public get captureStderr(): boolean {
-    return this._captureStderr
+  public get externalOutputCaptureStderr(): boolean {
+    return this._externalOutputCaptureStderr
   }
 
   public set externalOutputMode(mode: ExternalOutputMode) {
@@ -1561,7 +1561,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private applyExternalOutputMode(mode: ExternalOutputMode): void {
     this._externalOutputMode = mode
     this.stdout.write = mode === "capture-stdout" ? this.interceptStdoutWrite : this.realStdoutWrite
-    if (this._captureStderr) {
+    if (this._externalOutputCaptureStderr) {
       this.stderr.write = mode === "capture-stdout" ? this.interceptStderrWrite : this.realStderrWrite
     }
   }
@@ -2428,7 +2428,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       // Native flushing appends and repaints in one controlled frame, which is
       // what avoids footer flicker.
       const commits =
-        this._capturedStdoutMode === "passthrough"
+        this._externalOutputRendering === "terminal-native"
           ? [createCapturedStdoutPassthroughCommit(text)].filter(
               (commit): commit is CapturedStdoutPassthroughCommit => commit !== null,
             )
@@ -4027,7 +4027,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._externalOutputMode = "passthrough"
     this.pendingExternalOutputMode = null
     this.stdout.write = this.realStdoutWrite
-    if (this._captureStderr) {
+    if (this._externalOutputCaptureStderr) {
       this.stderr.write = this.realStderrWrite
     }
     this.externalOutputQueue.clear()
