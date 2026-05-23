@@ -197,6 +197,22 @@ test("requestRender() does trigger when renderer is paused", async () => {
   renderer.renderNative = originalRender
 })
 
+test("requestFullRepaintRender() forces the next main-screen render to fully repaint", async () => {
+  renderer.destroy()
+  ;({ renderer, mockInput, mockMouse, renderOnce } = await createTestRenderer({ screenMode: "main-screen" }))
+
+  const renderSpy = spyOn((renderer as any).lib, "render")
+
+  renderer.requestFullRepaintRender()
+  await renderOnce()
+
+  expect(renderSpy).toHaveBeenCalledTimes(1)
+  expect(renderSpy.mock.calls[0]?.[1]).toBe(true)
+  expect((renderer as any).forceFullRepaintRequested).toBe(false)
+
+  renderSpy.mockRestore()
+})
+
 test("auto() transitions running renderer to AUTO_STARTED state", () => {
   renderer.start()
   expect(renderer.controlState).toBe(RendererControlState.EXPLICIT_STARTED)
