@@ -1,8 +1,9 @@
 > OpenTUI [upstream](https://github.com/anomalyco/opentui) + experimental patchset for Node.js >=22 from [github.com/justjake/opentui](https://github.com/justjake/opentui) by [@jitl](https://twitter.com/jitl).
 >
-> - Support Node.js v22 (upstream requires Node.js v26's `node:ffi`)
-> - Support React 18 (upstream requires React 19)
-> - Support `require(ESM)` by removing top-level `await` expressions (upstream requires `await import(...)` in CommonJS modules)
+> - Support Node.js v22 (upstream requires Node.js v26's `node:ffi`).
+> - Support React 18 (upstream requires React 19).
+> - Support `require(ESM)` by removing top-level `await` expressions (upstream requires `await import(...)` in CommonJS modules).
+> - `await writeReactToScrollback(renderer, <View />)` helper for split-footer mode.
 > - Changes to `split-footer` screen mode:
 >
 > ```typescript
