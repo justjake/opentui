@@ -13,6 +13,7 @@ env:
 
 jobs:
   bench-native-smoke:
+    if: github.repository == 'anomalyco/opentui'
     name: Native Benchmark Smoke
     runs-on: macos-latest
     timeout-minutes: 15

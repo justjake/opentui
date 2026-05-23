@@ -6,6 +6,7 @@ on:
 
 jobs:
   fmt:
+    if: github.repository == 'anomalyco/opentui'
     name: Format Check
     runs-on: ubuntu-latest
 
@@ -32,6 +33,7 @@ jobs:
           git diff --color=always
 
   lint:
+    if: github.repository == 'anomalyco/opentui'
     name: Lint Check
     runs-on: ubuntu-latest
 
@@ -54,7 +56,7 @@ jobs:
     name: Format and Lint
     needs: [fmt, lint]
     runs-on: ubuntu-latest
-    if: always()
+    if: github.repository == 'anomalyco/opentui' && always()
 
     steps:
       - name: Check results
