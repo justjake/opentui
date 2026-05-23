@@ -1,6 +1,6 @@
-import React from "react"
 import { createCliRenderer, RGBA } from "@opentui/core"
 import { createRoot } from "@opentui/react"
+import React, { useState } from "react"
 
 const FOOTER_ROWS = ["A", "B", "C", "D"] as const
 const STDOUT_INTERVAL_MS = 16
@@ -96,14 +96,29 @@ function formatLogLine(line: number): string {
   return [timestamp, id, levelText, serviceText, snippetText, ansi.dim(detail)].join(" ")
 }
 
+function Hoverable(props: { children: React.ReactNode }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <text
+      bg={hovered ? RGBA.fromInts(80, 140, 84, 102) : undefined}
+      onMouseOver={() => setHovered(true)}
+      onMouseOut={() => setHovered(false)}
+    >
+      {props.children}
+    </text>
+  )
+}
+
 function SplitFooterProbe(props: { rowCount: number }) {
   const { rowCount } = props
 
   return (
     <box flexDirection="column" width="100%">
       {FOOTER_ROWS.slice(0, rowCount).map((row) => (
-        <box key={row} width="100%" backgroundColor={FOOTER_ROW_BACKGROUND}>
-          <text fg={FOOTER_ROW_TEXT}>{row}</text>
+        <box key={row} width="100%" backgroundColor={FOOTER_ROW_BACKGROUND} flexDirection="row">
+          {FOOTER_ROWS.map(() => (
+            <Hoverable>{row}</Hoverable>
+          ))}
         </box>
       ))}
     </box>

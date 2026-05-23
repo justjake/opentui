@@ -935,6 +935,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private _externalOutputRendering: ExternalOutputRendering = "terminal-native"
   private _externalOutputCaptureStderrConfig: ExternalOutputCaptureStderr = "auto"
   private _externalOutputCaptureStderr: boolean = false
+  private deferredTerminalNativeTrailingNewline: boolean = false
   private clearOnShutdown: boolean = true
   private _suspendedMouseEnabled: boolean = false
   private _previousControlState: RendererControlState = RendererControlState.IDLE
@@ -2454,6 +2455,25 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return commits
   }
 
+  private createTerminalNativeStdoutCommit(text: string): CapturedStdoutPassthroughCommit | null {
+    if (text.length === 0) {
+      return null
+    }
+
+    let deferredText = text
+    if (this.deferredTerminalNativeTrailingNewline) {
+      deferredText = `\r\n${deferredText}`
+      this.deferredTerminalNativeTrailingNewline = false
+    }
+
+    if (deferredText.endsWith("\n")) {
+      deferredText = deferredText.slice(0, -1)
+      this.deferredTerminalNativeTrailingNewline = true
+    }
+
+    return createCapturedStdoutPassthroughCommit(deferredText)
+  }
+
   private flushPendingSplitCommits(forceFooterRepaint: boolean = false, drainAll: boolean = false): void {
     // Drain only a bounded prefix so one JS render pass maps to one native frame.
     // Remaining commits are intentionally left queued and rendered on subsequent
@@ -2536,7 +2556,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       // what avoids footer flicker.
       const commits =
         this._externalOutputRendering === "terminal-native"
-          ? [createCapturedStdoutPassthroughCommit(text)].filter(
+          ? [this.createTerminalNativeStdoutCommit(text)].filter(
               (commit): commit is CapturedStdoutPassthroughCommit => commit !== null,
             )
           : this.createStdoutSnapshotCommits(text)
