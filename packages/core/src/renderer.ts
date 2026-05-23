@@ -3966,7 +3966,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     this.externalOutputMode = "passthrough"
 
-    if (this._splitHeight > 0) {
+    if (this._splitHeight > 0 && this.clearOnShutdown) {
       this.flushStdoutCache(this._splitHeight, true)
     }
   }

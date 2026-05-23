@@ -1259,6 +1259,7 @@ test("CliRenderer destroy does not clear split footer surface when clearOnShutdo
   const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
   const originalSetRenderOffset = lib.setRenderOffset.bind(lib)
   const originalDestroyRenderer = lib.destroyRenderer.bind(lib)
+  const writeOutSpy = spyOn(renderer as any, "writeOut")
 
   lib.commitSplitFooterSnapshot = (...args: any[]) => {
     order.push("split-commit")
@@ -1278,10 +1279,37 @@ test("CliRenderer destroy does not clear split footer surface when clearOnShutdo
   renderer.destroy()
 
   expect(order).toEqual(["split-commit", "destroy"])
+  const wroteClearToEndOfScreen = writeOutSpy.mock.calls.some(([output]) => String(output).includes("\x1b[J"))
+  expect(wroteClearToEndOfScreen).toBe(false)
 
+  writeOutSpy.mockRestore()
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   lib.setRenderOffset = originalSetRenderOffset
   lib.destroyRenderer = originalDestroyRenderer
+})
+
+test("CliRenderer destroy does not blank split footer with a forced stdout flush when clearOnShutdown is false", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "disabled",
+    clearOnShutdown: false,
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+
+  const writeOutSpy = spyOn(renderer as any, "writeOut")
+
+  renderer.destroy()
+
+  const wroteClearToEndOfScreen = writeOutSpy.mock.calls.some(([output]) => String(output).includes("\x1b[J"))
+  expect(wroteClearToEndOfScreen).toBe(false)
+
+  writeOutSpy.mockRestore()
 })
 
 test("CliRenderer split-footer passthrough ignores console capture writes", async () => {
