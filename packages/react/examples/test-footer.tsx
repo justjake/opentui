@@ -153,13 +153,13 @@ async function main() {
     }
   })
 
-  if (renderer.externalOutputMode === "capture-stdout") {
-    const seedRows = Math.max(renderer.terminalHeight - renderer.footerHeight, 0)
-    if (seedRows > 0) {
-      process.stdout.write("\n".repeat(seedRows))
-      await renderer.idle()
-    }
-  }
+  // if (renderer.externalOutputMode === "capture-stdout") {
+  //   const seedRows = Math.max(renderer.terminalHeight - renderer.footerHeight, 0)
+  //   if (seedRows > 0) {
+  //     process.stdout.write("\n".repeat(seedRows))
+  //     await renderer.idle()
+  //   }
+  // }
 
   renderFooter()
 
