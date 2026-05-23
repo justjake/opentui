@@ -15,6 +15,7 @@ on:
 
 jobs:
   build-examples:
+    if: github.repository == 'anomalyco/opentui'
     name: Build Example Executables
     runs-on: macos-latest
 

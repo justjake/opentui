@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   release:
+    if: github.repository == 'anomalyco/opentui'
     runs-on: macos-latest
 
     steps:

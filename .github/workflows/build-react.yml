@@ -10,6 +10,7 @@ env:
 
 jobs:
   test:
+    if: github.repository == 'anomalyco/opentui'
     name: Test (${{ matrix.os }})
     strategy:
       matrix:
@@ -63,7 +64,7 @@ jobs:
     name: React - Build and Test
     needs: [test]
     runs-on: ubuntu-latest
-    if: always()
+    if: github.repository == 'anomalyco/opentui' && always()
     steps:
       - name: Check test results
         run: |
