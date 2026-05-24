@@ -116,10 +116,6 @@ jobs:
 
           short_sha="${source_sha:0:7}"
 
-          if [ -z "${release_type}" ]; then
-            release_type="stable"
-          fi
-
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             dry_run="${INPUT_DRY_RUN}"
           else
@@ -147,6 +143,37 @@ jobs:
             " -- "$1"
           }
 
+          npm_version_status() {
+            local spec="$1"
+            local output
+            output="$(mktemp)"
+
+            if npm view "${spec}" version --json >"${output}" 2>&1; then
+              rm -f "${output}"
+              echo "exists"
+              return 0
+            fi
+
+            if grep -q "E404" "${output}"; then
+              rm -f "${output}"
+              echo "missing"
+              return 0
+            fi
+
+            cat "${output}" >&2
+            rm -f "${output}"
+            return 1
+          }
+
+          if [ -z "${release_type}" ]; then
+            source_version_status="$(npm_version_status "${package_name}@${source_version}")"
+            if [ "${source_version_status}" = "exists" ]; then
+              release_type="next"
+            else
+              release_type="stable"
+            fi
+          fi
+
           case "${release_type}" in
             stable)
               package_version="${source_version}"
@@ -173,7 +200,8 @@ jobs:
             exit 0
           fi
 
-          if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+          package_version_status="$(npm_version_status "${package_name}@${package_version}")"
+          if [ "${package_version_status}" = "exists" ]; then
             emit skip "${package_version}" "${npm_tag}"
             echo "Version ${package_version} is already published; skipping publish."
           else
