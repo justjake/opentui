@@ -3,7 +3,7 @@ import { join } from "node:path"
 
 const fixturePath = join(import.meta.dir, "destroy-on-exit.fixture.ts")
 
-const runFixture = (code: number, mode: "idle" | "during-render" = "idle") => {
+const runFixture = (code: number, mode: "idle" | "during-render" | "multi" = "idle") => {
   const result = Bun.spawnSync([process.execPath, fixturePath, code.toString(), mode], {
     cwd: join(import.meta.dir, ".."),
     stdout: "pipe",
@@ -29,6 +29,14 @@ describe("destroy on process exit", () => {
 
     expect(result.exitCode).toBe(1)
     expect(stdout).toInclude("raw mode disabled")
+  })
+
+  it("it should destroy all live renderers at process exit", () => {
+    const { result, stdout } = runFixture(0, "multi")
+
+    expect(result.exitCode).toBe(0)
+    expect(stdout).toInclude("raw mode disabled")
+    expect(stdout).toInclude("second raw mode disabled")
   })
 
   it("it should suspend the renderer when destroy happens during an active frame in an exit handler", () => {
