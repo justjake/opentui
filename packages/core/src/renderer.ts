@@ -2545,9 +2545,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       // chunk negates batching and reintroduces duplicate clear/move traffic.
       const forceCommit = forceFooterRepaint && index === lastCommitIndex
       // beginFrame/finalizeFrame tell native code whether this commit opens or
-      // closes the shared frame envelope. Intermediate commits append payload only.
-      // Mixed snapshot/byte bursts cannot share one native frame because each
-      // commit path writes through a different native renderer mechanism.
+      // closes the shared frame envelope. Keep homogeneous bursts batched, but do
+      // not mix rendered snapshots and terminal-native byte chunks in one native
+      // frame because the FFI path can drop bytes from mixed batches.
       const beginFrame = hasMixedCommitKinds ? true : index === 0
       const finalizeFrame = hasMixedCommitKinds ? true : index === lastCommitIndex
 
