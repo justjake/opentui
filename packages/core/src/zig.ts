@@ -1638,7 +1638,7 @@ export interface RenderLib extends AudioEngineLib {
   commitSplitFooterByteChunk: (
     renderer: Pointer,
     bytes: Uint8Array,
-    rowWidths: Uint32Array,
+    rowColumnsByRow: Uint32Array,
     startOnNewLine: boolean,
     trailingNewline: boolean,
     pinnedRenderOffset: number,
@@ -2791,7 +2791,7 @@ class FFIRenderLib implements RenderLib {
   public commitSplitFooterByteChunk(
     renderer: Pointer,
     bytes: Uint8Array,
-    rowWidths: Uint32Array,
+    rowColumnsByRow: Uint32Array,
     startOnNewLine: boolean,
     trailingNewline: boolean,
     pinnedRenderOffset: number,
@@ -2803,8 +2803,8 @@ class FFIRenderLib implements RenderLib {
       renderer,
       ptr(bytes),
       bytes.length,
-      ptr(rowWidths),
-      rowWidths.length,
+      ptr(rowColumnsByRow),
+      rowColumnsByRow.length,
       ffiBool(startOnNewLine),
       ffiBool(trailingNewline),
       pinnedRenderOffset,
