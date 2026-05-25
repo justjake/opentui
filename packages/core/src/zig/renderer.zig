@@ -983,7 +983,7 @@ pub const CliRenderer = struct {
         return self.renderOffset;
     }
 
-    pub fn commitSplitFooterPassthroughBatched(
+    pub fn commitSplitFooterByteChunkBatched(
         self: *CliRenderer,
         text: []const u8,
         row_widths: []const u32,
@@ -1012,7 +1012,7 @@ pub const CliRenderer = struct {
             self.splitBatchRedrawFooter = false;
             self.splitBatchDeltaTime = deltaTime;
 
-            const redraw_footer = self.appendSplitFooterPassthroughCommit(
+            const redraw_footer = self.appendSplitFooterByteChunkCommit(
                 writer,
                 text,
                 row_widths,
@@ -1036,7 +1036,7 @@ pub const CliRenderer = struct {
         }
 
         if (!self.splitBatchActive) {
-            return self.commitSplitFooterPassthroughBatched(
+            return self.commitSplitFooterByteChunkBatched(
                 text,
                 row_widths,
                 start_on_new_line,
@@ -1049,7 +1049,7 @@ pub const CliRenderer = struct {
         }
 
         const writer = OutputBufferWriter.writer();
-        const redraw_footer = self.appendSplitFooterPassthroughCommit(
+        const redraw_footer = self.appendSplitFooterByteChunkCommit(
             writer,
             text,
             row_widths,
@@ -1267,7 +1267,7 @@ pub const CliRenderer = struct {
         }
     }
 
-    fn writePassthroughCommit(
+    fn writeByteChunkCommit(
         self: *CliRenderer,
         writer: anytype,
         text: []const u8,
@@ -1386,7 +1386,7 @@ pub const CliRenderer = struct {
         return redraw_footer;
     }
 
-    fn appendSplitFooterPassthroughCommit(
+    fn appendSplitFooterByteChunkCommit(
         self: *CliRenderer,
         writer: anytype,
         text: []const u8,
@@ -1448,7 +1448,7 @@ pub const CliRenderer = struct {
                     writer.writeAll("\r\n") catch {};
                 }
 
-                self.writePassthroughCommit(writer, text);
+                self.writeByteChunkCommit(writer, text);
 
                 if (use_bounded_scroll_region) {
                     writer.writeAll("\x1b[r") catch {};

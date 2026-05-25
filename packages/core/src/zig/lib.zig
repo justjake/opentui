@@ -501,7 +501,7 @@ export fn commitSplitFooterSnapshot(
     );
 }
 
-export fn commitSplitFooterPassthrough(
+export fn commitSplitFooterByteChunk(
     rendererPtr: *renderer.CliRenderer,
     textPtr: [*]const u8,
     textLen: u32,
@@ -514,7 +514,7 @@ export fn commitSplitFooterPassthrough(
     beginFrame: bool,
     finalizeFrame: bool,
 ) u32 {
-    return rendererPtr.commitSplitFooterPassthroughBatched(
+    return rendererPtr.commitSplitFooterByteChunkBatched(
         textPtr[0..textLen],
         rowWidthsPtr[0..rowCount],
         startOnNewLine,

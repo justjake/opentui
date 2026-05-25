@@ -121,7 +121,7 @@ class TestExternalOutputRecorder implements TestExternalOutput {
   }
 
   private record = (event: CliRendererExternalOutputEvent): void => {
-    if (event.kind === "passthrough") {
+    if (event.kind === "bytes") {
       this.commits.push({
         text: event.text,
         rows: event.text.split("\n"),

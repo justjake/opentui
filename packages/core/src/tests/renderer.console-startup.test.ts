@@ -2291,7 +2291,7 @@ test("CliRenderer split-footer routes captured output through snapshot native co
   splitCommitSpy.mockRestore()
 })
 
-test("CliRenderer split-footer passthrough captured stdout preserves logical writes", async () => {
+test("CliRenderer split-footer terminal-native captured stdout preserves logical writes", async () => {
   const result = await createTestRenderer({
     width: 4,
     height: 8,
@@ -2305,21 +2305,21 @@ test("CliRenderer split-footer passthrough captured stdout preserves logical wri
   renderer = result.renderer
   const lib = (renderer as any).lib
   const snapshotCommitSpy = spyOn(lib, "commitSplitFooterSnapshot")
-  const passthroughCommitSpy = spyOn(lib, "commitSplitFooterPassthrough")
+  const byteChunkCommitSpy = spyOn(lib, "commitSplitFooterByteChunk")
 
   ;(renderer as any).stdout.write("\x1b[31mabcdef\x1b[0m\n")
   await result.renderOnce()
 
   expect(snapshotCommitSpy).not.toHaveBeenCalled()
-  expect(passthroughCommitSpy).toHaveBeenCalledTimes(1)
-  const passthroughArgs = passthroughCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
-  expect(new TextDecoder().decode(passthroughArgs[1])).toBe("\x1b[31mabcdef\x1b[0m")
-  expect(Array.from(passthroughArgs[2])).toEqual([6])
-  expect(passthroughArgs[4]).toBe(false)
+  expect(byteChunkCommitSpy).toHaveBeenCalledTimes(1)
+  const byteChunkArgs = byteChunkCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
+  expect(new TextDecoder().decode(byteChunkArgs[1])).toBe("\x1b[31mabcdef\x1b[0m")
+  expect(Array.from(byteChunkArgs[2])).toEqual([6])
+  expect(byteChunkArgs[4]).toBe(false)
   expect((renderer as any).renderOffset).toBe(2)
 
   snapshotCommitSpy.mockRestore()
-  passthroughCommitSpy.mockRestore()
+  byteChunkCommitSpy.mockRestore()
 })
 
 test("CliRenderer split-footer terminal-native defers trailing newline until following output", async () => {
@@ -2335,7 +2335,7 @@ test("CliRenderer split-footer terminal-native defers trailing newline until fol
 
   renderer = result.renderer
   const lib = (renderer as any).lib
-  const passthroughCommitSpy = spyOn(lib, "commitSplitFooterPassthrough")
+  const byteChunkCommitSpy = spyOn(lib, "commitSplitFooterByteChunk")
 
   try {
     ;(renderer as any).stdout.write("line-1\n")
@@ -2344,19 +2344,19 @@ test("CliRenderer split-footer terminal-native defers trailing newline until fol
     ;(renderer as any).stdout.write("line-2\n")
     await result.renderOnce()
 
-    expect(passthroughCommitSpy).toHaveBeenCalledTimes(2)
+    expect(byteChunkCommitSpy).toHaveBeenCalledTimes(2)
 
-    const firstArgs = passthroughCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
+    const firstArgs = byteChunkCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
     expect(new TextDecoder().decode(firstArgs[1])).toBe("line-1")
     expect(Array.from(firstArgs[2])).toEqual([6])
     expect(firstArgs[4]).toBe(false)
 
-    const secondArgs = passthroughCommitSpy.mock.calls[1] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
+    const secondArgs = byteChunkCommitSpy.mock.calls[1] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
     expect(new TextDecoder().decode(secondArgs[1])).toBe("\r\nline-2")
     expect(Array.from(secondArgs[2])).toEqual([0, 6])
     expect(secondArgs[4]).toBe(false)
   } finally {
-    passthroughCommitSpy.mockRestore()
+    byteChunkCommitSpy.mockRestore()
   }
 })
 
