@@ -2322,7 +2322,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
 
     const rowColumnsByRow =
-      commit.kind === "snapshot" ? this.getSnapshotRowWidths(commit.snapshot, commit.rowColumns) : commit.rowColumnsByRow
+      commit.kind === "snapshot"
+        ? this.getSnapshotRowWidths(commit.snapshot, commit.rowColumns)
+        : commit.rowColumnsByRow
     for (let index = 0; index < rowColumnsByRow.length; index += 1) {
       const rowColumns = rowColumnsByRow[index] ?? 0
       tailColumn = this.advanceSplitTailColumn(tailColumn, rowColumns, width)
@@ -2867,6 +2869,16 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       (pendingSplitFooterTransition.scrollLines ?? 0) > 0
     const shrinkingSplitFooter = nextSplitHeight > 0 && nextSplitHeight < splitTransitionSourceHeight
     const growingSplitFooter = nextSplitHeight > splitTransitionSourceHeight && splitTransitionSourceHeight > 0
+    const autoShrinkingSplitFooter = this._footerHeightMode === "auto" && shrinkingSplitFooter
+    const bottomAnchoredShrinkOffset = autoShrinkingSplitFooter
+      ? Math.max(
+          nextSplitOutputOffset,
+          Math.min(
+            splitTransitionSourceSurfaceOffset + splitTransitionSourceHeight - nextSplitHeight,
+            nextPinnedRenderOffset,
+          ),
+        )
+      : nextSplitOutputOffset
     const nextSplitSurfaceOffset =
       screenMode !== "split-footer" || nextSplitHeight === 0
         ? 0
@@ -2874,16 +2886,18 @@ export class CliRenderer extends EventEmitter implements RenderContext {
           ? pendingSplitFooterTransition.targetTopLine - 1
           : pendingSplitFooterReturn
             ? splitTransitionSourceSurfaceOffset
-            : shrinkingSplitFooter && splitTransitionSourceSurfaceOffset > 0
-              ? splitTransitionSourceSurfaceOffset
-              : shrinkingSplitFooter
-                ? nextSplitOutputOffset
-                : growingSplitFooter
-                  ? Math.max(
-                      nextSplitOutputOffset,
-                      Math.min(splitTransitionSourceSurfaceOffset, nextPinnedRenderOffset),
-                    )
-                  : nextPinnedRenderOffset
+            : autoShrinkingSplitFooter
+              ? bottomAnchoredShrinkOffset
+              : shrinkingSplitFooter && splitTransitionSourceSurfaceOffset > 0
+                ? splitTransitionSourceSurfaceOffset
+                : shrinkingSplitFooter
+                  ? nextSplitOutputOffset
+                  : growingSplitFooter
+                    ? Math.max(
+                        nextSplitOutputOffset,
+                        Math.min(splitTransitionSourceSurfaceOffset, nextPinnedRenderOffset),
+                      )
+                    : nextPinnedRenderOffset
     const splitTransitionTargetTopLine = nextSplitSurfaceOffset + 1
     const splitViewportScrollLines = pendingSplitFooterViewportReturn
       ? (pendingSplitFooterTransition.scrollLines ?? 0)
