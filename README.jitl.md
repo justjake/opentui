@@ -1,4 +1,4 @@
-> OpenTUI [upstream](https://github.com/anomalyco/opentui) + experimental patchset for Node.js >=22 from [github.com/justjake/opentui](https://github.com/justjake/opentui) by [@jitl](https://twitter.com/jitl).
+> OpenTUI [upstream](https://github.com/anomalyco/opentui) + experimental patchset for Node.js >=22 from [github.com/justjake/opentui](https://github.com/justjake/opentui) by [@jitl](https://twitter.com/jitl) ([diff](__JITL_DIFF_URL__)).
 >
 > - Support Node.js v22 (upstream requires Node.js v26's `node:ffi`).
 > - Support React 18 (upstream requires React 19).

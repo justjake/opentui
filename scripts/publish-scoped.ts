@@ -58,7 +58,35 @@ const rootDir = resolve(__dirname, "..")
 
 const PUBLISHED_PACKAGE_DIRS = ["core", "qrcode", "react", "solid", "keymap"] as const
 const TEXT_EXTENSIONS = new Set([".cjs", ".css", ".d.ts", ".js", ".json", ".map", ".md", ".mjs", ".ts", ".txt"])
-const README_NOTICE = readFileSync(join(rootDir, "README.jitl.md"), "utf8")
+const README_DIFF_URL_PLACEHOLDER = "__JITL_DIFF_URL__"
+const README_NOTICE_TEMPLATE = readFileSync(join(rootDir, "README.jitl.md"), "utf8")
+
+function gitOutput(args: string[]): string {
+  const result = spawnSync("git", args, {
+    cwd: rootDir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed:\n${result.stderr.trim()}`)
+  }
+
+  return result.stdout.trim()
+}
+
+function createReadmeNotice(): string {
+  const buildSha = gitOutput(["rev-parse", "HEAD"])
+  const diffUrl = `https://github.com/anomalyco/opentui/compare/main...justjake:opentui:${buildSha}`
+
+  if (!README_NOTICE_TEMPLATE.includes(README_DIFF_URL_PLACEHOLDER)) {
+    throw new Error(`README.jitl.md is missing ${README_DIFF_URL_PLACEHOLDER}`)
+  }
+
+  return README_NOTICE_TEMPLATE.replaceAll(README_DIFF_URL_PLACEHOLDER, diffUrl)
+}
+
+const README_NOTICE = createReadmeNotice()
 
 function parseArgs(): Options {
   const options: Options = {
