@@ -9,6 +9,7 @@
     "test": "node --test index.js"
   },
   "dependencies": {
-    "@opentui/core": "*"
+    "@opentui/core": "*",
+    "web-tree-sitter": "0.25.10"
   }
 }

@@ -11,11 +11,29 @@ import type {
   InjectionMapping,
 } from "./types.js"
 import { DownloadUtils } from "./download-utils.js"
-import { isMainThread } from "worker_threads"
+import { isMainThread, parentPort } from "node:worker_threads"
 import { isBunfsPath, normalizeBunfsPath } from "../bunfs.js"
 import { resolveBundledFilePath } from "../../platform/runtime.js"
 
-const self = globalThis
+type WorkerMessageHandler = (event: MessageEvent) => void | Promise<void>
+type WorkerGlobal = typeof globalThis & {
+  onmessage?: WorkerMessageHandler | null
+  postMessage?: (message: unknown) => void
+}
+
+const self = globalThis as WorkerGlobal
+
+const nodeParentPort = parentPort
+
+if (!isMainThread && nodeParentPort && typeof self.postMessage !== "function") {
+  self.postMessage = (message: unknown) => {
+    nodeParentPort.postMessage(message)
+  }
+
+  nodeParentPort.on("message", (data) => {
+    self.onmessage?.({ data } as MessageEvent)
+  })
+}
 
 type ParserState = {
   parser: Parser

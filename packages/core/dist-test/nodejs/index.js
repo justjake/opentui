@@ -1,4 +1,7 @@
 import assert from "node:assert/strict"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import process from "node:process"
 
 const nativePackageName = `@opentui/core-${process.platform}-${process.arch}`
@@ -159,6 +162,27 @@ if (isNodeTest) {
         `Expected ${nativePackageName} to be installed for the dist test. ` +
           `dist-test should install it automatically. Original error: ${error instanceof Error ? error.message : String(error)}`,
       )
+    }
+  })
+
+  test("runs tree-sitter highlighting through Node worker_threads", async () => {
+    const { TreeSitterClient } = await loadCore()
+    const dataPath = await mkdtemp(join(tmpdir(), "opentui-node-tree-sitter-"))
+    const client = new TreeSitterClient({
+      dataPath,
+      initTimeout: 5000,
+    })
+
+    try {
+      await client.initialize()
+      const result = await client.highlightOnce("const value = 1", "javascript")
+
+      assert.equal(client.isInitialized(), true)
+      assert.equal(result.error, undefined)
+      assert.ok((result.highlights?.length ?? 0) > 0)
+    } finally {
+      await client.destroy()
+      await rm(dataPath, { recursive: true, force: true })
     }
   })
 
