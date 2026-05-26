@@ -28,6 +28,7 @@ interface PackageJson {
   devDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
+  engines?: Record<string, string>
 }
 
 const __filename = fileURLToPath(import.meta.url)
@@ -430,6 +431,7 @@ if (buildLib) {
         homepage: packageJson.homepage,
         repository: packageJson.repository,
         bugs: packageJson.bugs,
+        engines: packageJson.engines,
         exports,
         dependencies: packageJson.dependencies,
         devDependencies: packageJson.devDependencies,
