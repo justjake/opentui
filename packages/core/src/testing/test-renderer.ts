@@ -121,13 +121,13 @@ class TestExternalOutputRecorder implements TestExternalOutput {
   }
 
   private record = (event: CliRendererExternalOutputEvent): void => {
-    if (event.kind === "passthrough") {
+    if (event.kind === "bytes") {
       this.commits.push({
         text: event.text,
         rows: event.text.split("\n"),
-        width: Math.max(1, ...event.rowWidths),
-        height: event.rowWidths.length,
-        rowColumns: event.rowWidths[0] ?? 0,
+        width: Math.max(1, ...event.rowColumnsByRow),
+        height: event.rowColumnsByRow.length,
+        rowColumns: event.rowColumnsByRow[0] ?? 0,
         startOnNewLine: event.startOnNewLine,
         trailingNewline: event.trailingNewline,
       })

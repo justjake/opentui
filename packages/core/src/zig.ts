@@ -236,7 +236,7 @@ function getOpenTUILib(libPath?: string) {
       args: ["ptr", "ptr", "u32", "bool", "bool", "u32", "bool", "bool", "bool"],
       returns: "u32",
     },
-    commitSplitFooterPassthrough: {
+    commitSplitFooterByteChunk: {
       args: ["ptr", "ptr", "u32", "ptr", "u32", "bool", "bool", "u32", "bool", "bool", "bool"],
       returns: "u32",
     },
@@ -1635,10 +1635,10 @@ export interface RenderLib extends AudioEngineLib {
     beginFrame?: boolean,
     finalizeFrame?: boolean,
   ) => number
-  commitSplitFooterPassthrough: (
+  commitSplitFooterByteChunk: (
     renderer: Pointer,
     bytes: Uint8Array,
-    rowWidths: Uint32Array,
+    rowColumnsByRow: Uint32Array,
     startOnNewLine: boolean,
     trailingNewline: boolean,
     pinnedRenderOffset: number,
@@ -2788,10 +2788,10 @@ class FFIRenderLib implements RenderLib {
     )
   }
 
-  public commitSplitFooterPassthrough(
+  public commitSplitFooterByteChunk(
     renderer: Pointer,
     bytes: Uint8Array,
-    rowWidths: Uint32Array,
+    rowColumnsByRow: Uint32Array,
     startOnNewLine: boolean,
     trailingNewline: boolean,
     pinnedRenderOffset: number,
@@ -2799,12 +2799,12 @@ class FFIRenderLib implements RenderLib {
     beginFrame: boolean = true,
     finalizeFrame: boolean = true,
   ): number {
-    return this.opentui.symbols.commitSplitFooterPassthrough(
+    return this.opentui.symbols.commitSplitFooterByteChunk(
       renderer,
       ptr(bytes),
       bytes.length,
-      ptr(rowWidths),
-      rowWidths.length,
+      ptr(rowColumnsByRow),
+      rowColumnsByRow.length,
       ffiBool(startOnNewLine),
       ffiBool(trailingNewline),
       pinnedRenderOffset,

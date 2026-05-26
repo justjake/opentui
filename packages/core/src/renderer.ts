@@ -3,10 +3,10 @@ import { ANSI } from "./ansi.js"
 import { OptimizedBuffer } from "./buffer.js"
 import { TerminalConsole, capture, type ConsoleOptions } from "./console.js"
 import {
-  createCapturedStdoutPassthroughCommit,
-  type CapturedStdoutPassthroughCommit,
+  createByteChunkExternalOutputCommit,
+  type ByteChunkExternalOutputCommit,
   type ExternalOutputRendering,
-} from "./lib/captured-stdout-passthrough.js"
+} from "./lib/external-output-byte-chunk.js"
 import { Clipboard, type ClipboardTarget } from "./lib/clipboard.js"
 import { SystemClock, type Clock, type TimerHandle } from "./lib/clock.js"
 import { env, registerEnvVar } from "./lib/env.js"
@@ -62,7 +62,7 @@ import {
 } from "./types.js"
 import { resolveRenderLib, type NativeRenderStats, type RenderLib } from "./zig.js"
 
-export type { ExternalOutputRendering } from "./lib/captured-stdout-passthrough.js"
+export type { ExternalOutputRendering } from "./lib/external-output-byte-chunk.js"
 
 export type ExternalOutputCaptureStderr = "auto" | "always" | "never" | NodeJS.WriteStream
 
@@ -279,18 +279,19 @@ export interface CliRendererSnapshotExternalOutputEvent {
   trailingNewline: boolean
 }
 
-export interface CliRendererPassthroughExternalOutputEvent {
-  kind: "passthrough"
-  snapshot: { width: 0; height: 0; destroy(): void }
+export interface CliRendererByteChunkExternalOutputEvent {
+  kind: "bytes"
+  snapshot?: undefined
   text: string
-  rowWidths: Uint32Array
+  bytes: Uint8Array
+  rowColumnsByRow: Uint32Array
   startOnNewLine: boolean
   trailingNewline: boolean
 }
 
 export type CliRendererExternalOutputEvent =
   | CliRendererSnapshotExternalOutputEvent
-  | CliRendererPassthroughExternalOutputEvent
+  | CliRendererByteChunkExternalOutputEvent
 
 // Controls the built-in console overlay:
 //
@@ -462,7 +463,7 @@ type ExternalOutputSnapshotCommit = {
   trailingNewline: boolean
 }
 
-type ExternalOutputCommit = ExternalOutputSnapshotCommit | CapturedStdoutPassthroughCommit
+type ExternalOutputCommit = ExternalOutputSnapshotCommit | ByteChunkExternalOutputCommit
 
 type PendingSplitFooterTransition = {
   mode: "viewport-scroll" | "clear-stale-rows"
@@ -511,7 +512,7 @@ class ExternalOutputQueue {
 
   clear(): void {
     for (const commit of this.commits) {
-      commit.snapshot.destroy()
+      commit.snapshot?.destroy()
     }
     this.commits = []
   }
@@ -944,7 +945,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private _externalOutputRendering: ExternalOutputRendering = "terminal-native"
   private _externalOutputCaptureStderrConfig: ExternalOutputCaptureStderr = "auto"
   private _externalOutputCaptureStderr: boolean = false
-  private deferredTerminalNativeTrailingNewline: boolean = false
+  private deferredByteChunkTrailingNewline: boolean = false
   private clearOnShutdown: boolean = true
   private _suspendedMouseEnabled: boolean = false
   private _previousControlState: RendererControlState = RendererControlState.IDLE
@@ -1038,9 +1039,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       if (commit.kind === "snapshot") {
         capturedExternalOutput += `[snapshot ${commit.snapshot.width}x${commit.snapshot.height}]\n`
       } else {
-        capturedExternalOutput += commit.text
+        capturedExternalOutput += `[bytes ${commit.bytes.length} bytes, ${commit.rowColumnsByRow.length} rows]\n`
       }
-      commit.snapshot.destroy()
+      commit.snapshot?.destroy()
     }
 
     if (capturedConsoleOutput.length > 0 || capturedExternalOutput.length > 0 || cachedLogs.length > 0) {
@@ -2320,11 +2321,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       tailColumn = 0
     }
 
-    const rowWidths =
-      commit.kind === "snapshot" ? this.getSnapshotRowWidths(commit.snapshot, commit.rowColumns) : [...commit.rowWidths]
-    for (const [index, rowWidth] of rowWidths.entries()) {
-      tailColumn = this.advanceSplitTailColumn(tailColumn, rowWidth, width)
-      if (index < rowWidths.length - 1 || commit.trailingNewline) {
+    const rowColumnsByRow =
+      commit.kind === "snapshot" ? this.getSnapshotRowWidths(commit.snapshot, commit.rowColumns) : commit.rowColumnsByRow
+    for (let index = 0; index < rowColumnsByRow.length; index += 1) {
+      const rowColumns = rowColumnsByRow[index] ?? 0
+      tailColumn = this.advanceSplitTailColumn(tailColumn, rowColumns, width)
+      if (index < rowColumnsByRow.length - 1 || commit.trailingNewline) {
         tailColumn = 0
       }
     }
@@ -2488,23 +2490,23 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return commits
   }
 
-  private createTerminalNativeStdoutCommit(text: string): CapturedStdoutPassthroughCommit | null {
+  private createByteChunkStdoutCommit(text: string): ByteChunkExternalOutputCommit | null {
     if (text.length === 0) {
       return null
     }
 
     let deferredText = text
-    if (this.deferredTerminalNativeTrailingNewline) {
+    if (this.deferredByteChunkTrailingNewline) {
       deferredText = `\r\n${deferredText}`
-      this.deferredTerminalNativeTrailingNewline = false
+      this.deferredByteChunkTrailingNewline = false
     }
 
     if (deferredText.endsWith("\n")) {
       deferredText = deferredText.slice(0, -1)
-      this.deferredTerminalNativeTrailingNewline = true
+      this.deferredByteChunkTrailingNewline = true
     }
 
-    return createCapturedStdoutPassthroughCommit(deferredText)
+    return createByteChunkExternalOutputCommit(deferredText)
   }
 
   private resolveAutoSplitFooterHeightBeforeRender(): void {
@@ -2536,15 +2538,18 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const commits = this.externalOutputQueue.claim(drainAll ? Number.POSITIVE_INFINITY : this.maxSplitCommitsPerFrame)
     let hasCommittedOutput = false
     const lastCommitIndex = commits.length - 1
+    const hasMixedCommitKinds = commits.some((commit) => commit.kind !== commits[0]?.kind)
 
     for (const [index, commit] of commits.entries()) {
       // Force repaint only on the last commit in a frame. Repainting after every
       // chunk negates batching and reintroduces duplicate clear/move traffic.
       const forceCommit = forceFooterRepaint && index === lastCommitIndex
       // beginFrame/finalizeFrame tell native code whether this commit opens or
-      // closes the shared frame envelope. Intermediate commits append payload only.
-      const beginFrame = index === 0
-      const finalizeFrame = index === lastCommitIndex
+      // closes the shared frame envelope. Keep homogeneous bursts batched, but do
+      // not mix rendered snapshots and terminal-native byte chunks in one native
+      // frame because the FFI path can drop bytes from mixed batches.
+      const beginFrame = hasMixedCommitKinds ? true : index === 0
+      const finalizeFrame = hasMixedCommitKinds ? true : index === lastCommitIndex
 
       try {
         // Keep split append policy in native code so every producer (captured stdout
@@ -2562,10 +2567,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
             finalizeFrame,
           )
         } else {
-          this.renderOffset = this.lib.commitSplitFooterPassthrough(
+          this.renderOffset = this.lib.commitSplitFooterByteChunk(
             this.rendererPtr,
             commit.bytes,
-            commit.rowWidths,
+            commit.rowColumnsByRow,
             commit.startOnNewLine,
             commit.trailingNewline,
             this.getSplitPinnedRenderOffset(),
@@ -2577,7 +2582,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
         this.recordSplitCommit(commit)
         hasCommittedOutput = true
       } finally {
-        commit.snapshot.destroy()
+        commit.snapshot?.destroy()
       }
     }
 
@@ -2609,17 +2614,22 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       // Capture mode intentionally diverts stream writes into split commits.
       // Native flushing appends and repaints in one controlled frame, which is
       // what avoids footer flicker.
-      const commits =
-        this._externalOutputRendering === "terminal-native"
-          ? [this.createTerminalNativeStdoutCommit(text)].filter(
-              (commit): commit is CapturedStdoutPassthroughCommit => commit !== null,
-            )
-          : this.createStdoutSnapshotCommits(text)
-      for (const commit of commits) {
-        this.enqueueSplitCommit(commit)
+      let enqueuedCommit = false
+      if (this._externalOutputRendering === "terminal-native") {
+        const commit = this.createByteChunkStdoutCommit(text)
+        if (commit !== null) {
+          this.enqueueSplitCommit(commit)
+          enqueuedCommit = true
+        }
+      } else {
+        const commits = this.createStdoutSnapshotCommits(text)
+        for (const commit of commits) {
+          this.enqueueSplitCommit(commit)
+        }
+        enqueuedCommit = commits.length > 0
       }
 
-      if (commits.length > 0) {
+      if (enqueuedCommit) {
         // Defer actual terminal writes to the render loop so commits can be batched.
         this.requestRender()
       }
@@ -3002,9 +3012,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       if (commit.kind === "snapshot") {
         output += `[snapshot ${commit.snapshot.width}x${commit.snapshot.height}]\n`
       } else {
-        output += commit.text
+        output += `[bytes ${commit.bytes.length} bytes, ${commit.rowColumnsByRow.length} rows]\n`
       }
-      commit.snapshot.destroy()
+      commit.snapshot?.destroy()
     }
 
     const rendererStartLine = this.renderOffset + 1

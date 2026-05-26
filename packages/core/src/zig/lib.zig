@@ -501,11 +501,11 @@ export fn commitSplitFooterSnapshot(
     );
 }
 
-export fn commitSplitFooterPassthrough(
+export fn commitSplitFooterByteChunk(
     rendererPtr: *renderer.CliRenderer,
     textPtr: [*]const u8,
     textLen: u32,
-    rowWidthsPtr: [*]const u32,
+    rowColumnsByRowPtr: [*]const u32,
     rowCount: u32,
     startOnNewLine: bool,
     trailingNewline: bool,
@@ -514,9 +514,9 @@ export fn commitSplitFooterPassthrough(
     beginFrame: bool,
     finalizeFrame: bool,
 ) u32 {
-    return rendererPtr.commitSplitFooterPassthroughBatched(
+    return rendererPtr.commitSplitFooterByteChunkBatched(
         textPtr[0..textLen],
-        rowWidthsPtr[0..rowCount],
+        rowColumnsByRowPtr[0..rowCount],
         startOnNewLine,
         trailingNewline,
         pinnedRenderOffset,
