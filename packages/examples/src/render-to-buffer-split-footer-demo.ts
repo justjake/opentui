@@ -1,18 +1,18 @@
 import {
   ASCIIFontRenderable,
   BoxRenderable,
+  ScrollBoxRenderable,
   TextRenderable,
   TextTableRenderable,
+  bold,
   createCliRenderer,
   fg,
-  bold,
   italic,
   t,
   type CliRenderer,
   type KeyEvent,
   type TextChunk,
 } from "@opentui/core"
-import { ScrollBoxRenderable } from "@opentui/core"
 
 const FOOTER_HEIGHT = 8
 
@@ -38,6 +38,7 @@ let headerText: TextRenderable | null = null
 let statusText: TextRenderable | null = null
 let keyHandler: ((key: KeyEvent) => void) | null = null
 let shuttingDown = false
+let snapshotting = false
 let previousScreenMode: CliRenderer["screenMode"] | null = null
 let previousExternalOutputMode: CliRenderer["externalOutputMode"] | null = null
 let previousFooterHeight: number | null = null
@@ -130,7 +131,7 @@ function buildContent(renderer: CliRenderer): void {
     id: "render-to-buffer-split-footer-header",
     height: 1,
     content: t`${fg(PALETTE.title)(bold("renderToBuffer split-footer demo"))} ${fg(PALETTE.muted)(
-      "mouse wheel scrolls; Ctrl-C commits the full scroller to scrollback",
+      "mouse wheel scrolls; s snapshots to scrollback; Ctrl-C snapshots then exits",
     )}`,
   })
 
@@ -166,7 +167,7 @@ function buildContent(renderer: CliRenderer): void {
     id: "render-to-buffer-split-footer-status",
     height: 1,
     content: t`${fg(PALETTE.cyan)("ready")} ${fg(PALETTE.muted)(
-      `footer=${FOOTER_HEIGHT} mouse=on content=snapshot-on-exit`,
+      `footer=${FOOTER_HEIGHT} mouse=on s=snapshot ctrl-c=snapshot+exit`,
     )}`,
   })
 
@@ -180,40 +181,75 @@ function buildContent(renderer: CliRenderer): void {
   }
 }
 
+async function snapshotToScrollback(renderer: CliRenderer, exitAfterCommit: boolean): Promise<void> {
+  if (snapshotting || shuttingDown) {
+    return
+  }
+
+  snapshotting = true
+  shuttingDown = exitAfterCommit
+
+  let wasRunning = false
+
+  try {
+    if (!scrollBox) {
+      if (exitAfterCommit) {
+        renderer.destroy()
+      }
+      return
+    }
+
+    wasRunning = renderer.isRunning
+
+    if (statusText) {
+      statusText.content = t`${fg(PALETTE.amber)("committing")} ${fg(PALETTE.muted)(
+        "rendering full scrollbox content to split scrollback...",
+      )}`
+    }
+
+    renderer.stop()
+    await renderer.idle()
+
+    const snapshot = renderer.renderToBuffer({
+      renderable: scrollBox.content,
+      clip: "content",
+    })
+    const snapshotWidth = snapshot.width
+    const snapshotHeight = snapshot.height
+
+    renderer.enqueueRenderedScrollbackCommit({
+      snapshot,
+      rowColumns: snapshotWidth,
+      startOnNewLine: true,
+      trailingNewline: true,
+    })
+
+    await renderer.idle()
+
+    if (exitAfterCommit) {
+      renderer.destroy()
+      return
+    }
+
+    if (statusText) {
+      statusText.content = t`${fg(PALETTE.green)("committed")} ${fg(PALETTE.muted)(
+        `snapshot ${snapshotWidth}x${snapshotHeight} appended to scrollback`,
+      )}`
+    }
+  } finally {
+    if (!exitAfterCommit && !renderer.isDestroyed) {
+      snapshotting = false
+      if (wasRunning) {
+        renderer.start()
+      } else {
+        renderer.requestRender()
+      }
+    }
+  }
+}
+
 async function snapshotAndExit(renderer: CliRenderer): Promise<void> {
-  if (shuttingDown) {
-    return
-  }
-
-  shuttingDown = true
-  if (!scrollBox) {
-    renderer.destroy()
-    return
-  }
-
-  if (statusText) {
-    statusText.content = t`${fg(PALETTE.amber)("committing")} ${fg(PALETTE.muted)(
-      "rendering full scrollbox content to split scrollback...",
-    )}`
-  }
-
-  renderer.stop()
-  await renderer.idle()
-
-  const snapshot = renderer.renderToBuffer({
-    renderable: scrollBox.content,
-    clip: "content",
-  })
-
-  renderer.enqueueRenderedScrollbackCommit({
-    snapshot,
-    rowColumns: snapshot.width,
-    startOnNewLine: true,
-    trailingNewline: true,
-  })
-
-  await renderer.idle()
-  renderer.destroy()
+  await snapshotToScrollback(renderer, true)
 }
 
 export function run(renderer: CliRenderer): void {
@@ -231,6 +267,16 @@ export function run(renderer: CliRenderer): void {
   buildContent(renderer)
 
   keyHandler = (key: KeyEvent) => {
+    if (key.name === "s" && !key.ctrl && !key.meta && !key.shift) {
+      key.preventDefault()
+      key.stopPropagation()
+      void snapshotToScrollback(renderer, false).catch((error: unknown) => {
+        snapshotting = false
+        console.error("render-to-buffer split-footer snapshot failed:", error)
+      })
+      return
+    }
+
     if (key.name === "c" && key.ctrl) {
       key.preventDefault()
       key.stopPropagation()
@@ -256,6 +302,7 @@ export function destroy(renderer: CliRenderer): void {
   headerText = null
   statusText = null
   shuttingDown = false
+  snapshotting = false
 
   if (!renderer.isDestroyed) {
     if (previousExternalOutputMode) {
