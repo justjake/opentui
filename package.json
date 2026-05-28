@@ -24,7 +24,8 @@
     "publish:keymap": "cd packages/keymap && bun run publish",
     "prepare-release": "bun scripts/prepare-release.ts",
     "test": "bun run --filter '@opentui/core' --filter '@opentui/qrcode' --filter '@opentui/three' --filter '@opentui/solid' --filter '@opentui/react' --filter '@opentui/keymap' --if-present test",
-    "test:dist": "bun scripts/dist-test.ts --build packages/*/dist-test/*"
+    "test:dist": "bun scripts/dist-test.ts --build packages/*/dist-test/*",
+    "typecheck": "bun scripts/typecheck.ts"
   },
   "devDependencies": {
     "commander": "^13.1.0",

@@ -234,6 +234,10 @@ jobs:
           cd ../keymap
           bun run build
 
+      - name: Typecheck package artifacts
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: bun run typecheck
+
       - name: Test package artifacts
         if: steps.publish_plan.outputs.mode != 'skip'
         run: |
