@@ -51,6 +51,9 @@ export class OptimizedBuffer {
   private _width: number
   private _height: number
   private _widthMethod: WidthMethod
+  private originX: number = 0
+  private originY: number = 0
+  private originStack: Array<{ x: number; y: number }> = []
   public respectAlpha: boolean = false
   private _rawBuffers: {
     char: Uint32Array
@@ -140,6 +143,30 @@ export class OptimizedBuffer {
 
   public get height(): number {
     return this._height
+  }
+
+  public pushOrigin(x: number, y: number): void {
+    this.guard()
+    this.originStack.push({ x: this.originX, y: this.originY })
+    this.originX += Math.trunc(x)
+    this.originY += Math.trunc(y)
+  }
+
+  public popOrigin(): void {
+    this.guard()
+    const previous = this.originStack.pop()
+    if (!previous) {
+      throw new Error("Cannot pop buffer origin: origin stack is empty")
+    }
+    this.originX = previous.x
+    this.originY = previous.y
+  }
+
+  public clearOrigins(): void {
+    this.guard()
+    this.originX = 0
+    this.originY = 0
+    this.originStack = []
   }
 
   public setRespectAlpha(respectAlpha: boolean): void {
@@ -232,7 +259,7 @@ export class OptimizedBuffer {
 
   public setCell(x: number, y: number, char: string, fg: RGBA, bg: RGBA, attributes: number = 0): void {
     this.guard()
-    this.lib.bufferSetCell(this.bufferPtr, x, y, char, fg, bg, attributes)
+    this.lib.bufferSetCell(this.bufferPtr, x + this.originX, y + this.originY, char, fg, bg, attributes)
   }
 
   public setCellWithAlphaBlending(
@@ -244,7 +271,15 @@ export class OptimizedBuffer {
     attributes: number = 0,
   ): void {
     this.guard()
-    this.lib.bufferSetCellWithAlphaBlending(this.bufferPtr, x, y, char, fg, bg, attributes)
+    this.lib.bufferSetCellWithAlphaBlending(
+      this.bufferPtr,
+      x + this.originX,
+      y + this.originY,
+      char,
+      fg,
+      bg,
+      attributes,
+    )
   }
 
   public drawText(
@@ -257,8 +292,10 @@ export class OptimizedBuffer {
     selection?: { start: number; end: number; bgColor?: RGBA; fgColor?: RGBA } | null,
   ): void {
     this.guard()
+    const drawX = x + this.originX
+    const drawY = y + this.originY
     if (!selection) {
-      this.lib.bufferDrawText(this.bufferPtr, text, x, y, fg, bg, attributes)
+      this.lib.bufferDrawText(this.bufferPtr, text, drawX, drawY, fg, bg, attributes)
       return
     }
 
@@ -278,22 +315,23 @@ export class OptimizedBuffer {
 
     if (start > 0) {
       const beforeText = text.slice(0, start)
-      this.lib.bufferDrawText(this.bufferPtr, beforeText, x, y, fg, bg, attributes)
+      this.lib.bufferDrawText(this.bufferPtr, beforeText, drawX, drawY, fg, bg, attributes)
     }
 
     if (end > start) {
       const selectedText = text.slice(start, end)
-      this.lib.bufferDrawText(this.bufferPtr, selectedText, x + start, y, selectionFg, selectionBg, attributes)
+      this.lib.bufferDrawText(this.bufferPtr, selectedText, drawX + start, drawY, selectionFg, selectionBg, attributes)
     }
 
     if (end < text.length) {
       const afterText = text.slice(end)
-      this.lib.bufferDrawText(this.bufferPtr, afterText, x + end, y, fg, bg, attributes)
+      this.lib.bufferDrawText(this.bufferPtr, afterText, drawX + end, drawY, fg, bg, attributes)
     }
   }
 
   public fillRect(x: number, y: number, width: number, height: number, bg: RGBA): void {
-    this.lib.bufferFillRect(this.bufferPtr, x, y, width, height, bg)
+    this.guard()
+    this.lib.bufferFillRect(this.bufferPtr, x + this.originX, y + this.originY, width, height, bg)
   }
 
   public colorMatrix(
@@ -330,7 +368,16 @@ export class OptimizedBuffer {
     sourceHeight?: number,
   ): void {
     this.guard()
-    this.lib.drawFrameBuffer(this.bufferPtr, destX, destY, frameBuffer.ptr, sourceX, sourceY, sourceWidth, sourceHeight)
+    this.lib.drawFrameBuffer(
+      this.bufferPtr,
+      destX + this.originX,
+      destY + this.originY,
+      frameBuffer.ptr,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+    )
   }
 
   public destroy(): void {
@@ -341,12 +388,12 @@ export class OptimizedBuffer {
 
   public drawTextBuffer(textBufferView: TextBufferView, x: number, y: number): void {
     this.guard()
-    this.lib.bufferDrawTextBufferView(this.bufferPtr, textBufferView.ptr, x, y)
+    this.lib.bufferDrawTextBufferView(this.bufferPtr, textBufferView.ptr, x + this.originX, y + this.originY)
   }
 
   public drawEditorView(editorView: EditorView, x: number, y: number): void {
     this.guard()
-    this.lib.bufferDrawEditorView(this.bufferPtr, editorView.ptr, x, y)
+    this.lib.bufferDrawEditorView(this.bufferPtr, editorView.ptr, x + this.originX, y + this.originY)
   }
 
   public drawSuperSampleBuffer(
@@ -360,8 +407,8 @@ export class OptimizedBuffer {
     this.guard()
     this.lib.bufferDrawSuperSampleBuffer(
       this.bufferPtr,
-      x,
-      y,
+      x + this.originX,
+      y + this.originY,
       toPointer(pixelDataPtr),
       pixelDataLength,
       format,
@@ -382,8 +429,8 @@ export class OptimizedBuffer {
       this.bufferPtr,
       toPointer(dataPtr),
       dataLen,
-      posX,
-      posY,
+      posX + this.originX,
+      posY + this.originY,
       terminalWidthCells,
       terminalHeightCells,
     )
@@ -399,7 +446,16 @@ export class OptimizedBuffer {
     bg: RGBA | null = null,
   ): void {
     this.guard()
-    this.lib.bufferDrawGrayscaleBuffer(this.bufferPtr, posX, posY, ptr(intensities), srcWidth, srcHeight, fg, bg)
+    this.lib.bufferDrawGrayscaleBuffer(
+      this.bufferPtr,
+      posX + this.originX,
+      posY + this.originY,
+      ptr(intensities),
+      srcWidth,
+      srcHeight,
+      fg,
+      bg,
+    )
   }
 
   public drawGrayscaleBufferSupersampled(
@@ -414,8 +470,8 @@ export class OptimizedBuffer {
     this.guard()
     this.lib.bufferDrawGrayscaleBufferSupersampled(
       this.bufferPtr,
-      posX,
-      posY,
+      posX + this.originX,
+      posY + this.originY,
       ptr(intensities),
       srcWidth,
       srcHeight,
@@ -464,8 +520,8 @@ export class OptimizedBuffer {
 
     this.lib.bufferDrawBox(
       this.bufferPtr,
-      options.x,
-      options.y,
+      options.x + this.originX,
+      options.y + this.originY,
       options.width,
       options.height,
       borderChars,
@@ -479,7 +535,7 @@ export class OptimizedBuffer {
 
   public pushScissorRect(x: number, y: number, width: number, height: number): void {
     this.guard()
-    this.lib.bufferPushScissorRect(this.bufferPtr, x, y, width, height)
+    this.lib.bufferPushScissorRect(this.bufferPtr, x + this.originX, y + this.originY, width, height)
   }
 
   public popScissorRect(): void {
@@ -535,15 +591,19 @@ export class OptimizedBuffer {
 
     const columnCount = Math.max(0, options.columnOffsets.length - 1)
     const rowCount = Math.max(0, options.rowOffsets.length - 1)
+    const columnOffsets =
+      this.originX === 0 ? options.columnOffsets : options.columnOffsets.map((offset) => offset + this.originX)
+    const rowOffsets =
+      this.originY === 0 ? options.rowOffsets : options.rowOffsets.map((offset) => offset + this.originY)
 
     this.lib.bufferDrawGrid(
       this.bufferPtr,
       options.borderChars,
       options.borderFg,
       options.borderBg,
-      options.columnOffsets,
+      columnOffsets,
       columnCount,
-      options.rowOffsets,
+      rowOffsets,
       rowCount,
       {
         drawInner: options.drawInner,
@@ -554,6 +614,6 @@ export class OptimizedBuffer {
 
   public drawChar(char: number, x: number, y: number, fg: RGBA, bg: RGBA, attributes: number = 0): void {
     this.guard()
-    this.lib.bufferDrawChar(this.bufferPtr, char, x, y, fg, bg, attributes)
+    this.lib.bufferDrawChar(this.bufferPtr, char, x + this.originX, y + this.originY, fg, bg, attributes)
   }
 }

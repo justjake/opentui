@@ -78,12 +78,14 @@ import { setupCommonDemoKeys } from "./lib/standalone-keys.js"
 import * as corePluginSlotsDemo from "./core-plugin-slots-demo.js"
 import * as wideGraphemeOverlayDemo from "./wide-grapheme-overlay-demo.js"
 import * as nativeAudioDemo from "./native-audio-demo.js"
+import * as renderToBufferSplitFooterDemo from "./render-to-buffer-split-footer-demo.js"
 
 interface Example {
   name: string
   description: string
   run?: (renderer: CliRenderer) => void
   destroy?: (renderer: CliRenderer) => void
+  handlesCtrlC?: boolean
 }
 
 interface ExampleTheme {
@@ -255,6 +257,13 @@ const examples: Example[] = [
     description: "Focused split-footer surface demo for progressive text, code, and markdown scrollback",
     run: splitFooterStreamingDemo.run,
     destroy: splitFooterStreamingDemo.destroy,
+  },
+  {
+    name: "Render To Buffer Split Footer Demo",
+    description: "Mouse-enabled split-footer snapshot demo: Ctrl+C commits full scrollbox content before destroy",
+    run: renderToBufferSplitFooterDemo.run,
+    destroy: renderToBufferSplitFooterDemo.destroy,
+    handlesCtrlC: true,
   },
   {
     name: "Live State Management Demo",
@@ -754,6 +763,9 @@ class ExampleSelector {
   private setupKeyboardHandling(): void {
     this.renderer.keyInput.on("keypress", (key: KeyEvent) => {
       if (key.name === "c" && key.ctrl) {
+        if (!this.inMenu && this.currentExample?.handlesCtrlC) {
+          return
+        }
         this.cleanup()
         return
       }
