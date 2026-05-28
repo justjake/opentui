@@ -13,10 +13,10 @@ export interface RendererOptions<NodeType> {
 }
 
 export interface Renderer<NodeType> {
-  render(code: () => NodeType, node: NodeType): () => void
+  render(code: () => unknown, node: NodeType): () => void
   effect<T>(fn: (prev?: T) => T, init?: T): void
   memo<T>(fn: () => T, equal: boolean): () => T
-  createComponent<T>(Comp: (props: T) => NodeType, props: T): NodeType
+  createComponent<T, Result>(Comp: (props: T) => Result, props: T): Result
   createElement(tag: string): NodeType
   createTextNode(value: string): NodeType
   insertNode(parent: NodeType, node: NodeType, anchor?: NodeType): void

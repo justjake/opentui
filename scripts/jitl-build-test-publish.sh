@@ -392,6 +392,8 @@ bun scripts/prepare-release.ts "${VERSION}"
   bun run build
 )
 
+bun run typecheck
+
 if [[ "${SKIP_TESTS}" != "true" ]]; then
   (
     cd packages/core
