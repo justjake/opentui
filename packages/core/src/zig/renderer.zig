@@ -92,6 +92,34 @@ const SplitFooterTransition = struct {
     }
 };
 
+test "renderer - split footer shutdown scrolls visible pane offscreen without home clear" {
+    const pool = gp.initGlobalPool(std.testing.allocator);
+    defer gp.deinitGlobalPool();
+    var local_link_pool = link.LinkPool.init(std.testing.allocator);
+    defer local_link_pool.deinit();
+
+    var cli_renderer = try CliRenderer.create(
+        std.testing.allocator,
+        20,
+        3,
+        pool,
+        true,
+    );
+    defer cli_renderer.destroy();
+
+    cli_renderer.renderOffset = 5;
+
+    var output_buffer: [512]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&output_buffer);
+    cli_renderer.scrollSplitFooterSurfaceOffscreen(stream.writer());
+
+    const output = stream.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[H\x1b[J") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[6;1H\x1b[J\x1b[6;1H") != null);
+    try std.testing.expect(std.mem.endsWith(u8, output, "\x1b[1;1H"));
+    try std.testing.expectEqual(@as(usize, 8), std.mem.count(u8, output, "\r\n"));
+}
+
 pub const CliRenderer = struct {
     width: u32,
     height: u32,
@@ -442,6 +470,21 @@ pub const CliRenderer = struct {
         ansi.ANSI.moveToOutput(writer, 1, footer_top_line) catch {};
     }
 
+    fn scrollSplitFooterSurfaceOffscreen(self: *CliRenderer, writer: anytype) void {
+        if (self.renderOffset == 0) return;
+
+        const terminal_height = self.renderOffset + self.height;
+
+        self.clearSplitFooterSurface(writer);
+
+        var row: u32 = 0;
+        while (row < terminal_height) : (row += 1) {
+            writer.writeAll("\r\n") catch {};
+        }
+
+        ansi.ANSI.moveToOutput(writer, 1, 1) catch {};
+    }
+
     pub fn performShutdownSequence(self: *CliRenderer) void {
         if (!self.terminalSetup) return;
 
@@ -458,7 +501,7 @@ pub const CliRenderer = struct {
             direct.writeAll("\x1b[H\x1b[J") catch {};
             direct.flush() catch {};
         } else if (self.clearOnShutdown and self.renderOffset > 0) {
-            self.clearSplitFooterSurface(direct);
+            self.scrollSplitFooterSurfaceOffscreen(direct);
             direct.flush() catch {};
         }
 

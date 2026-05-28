@@ -4242,7 +4242,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
 
     if (this._splitHeight > 0 && this.clearOnShutdown) {
-      this.flushStdoutCache(this._splitHeight, true)
+      this.flushStdoutCache(this._splitHeight)
     }
   }
 
@@ -4319,10 +4319,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
           this.restoreShutdownFrameSnapshot(shutdownFrameSnapshot)
         }
         this.flushPendingSplitOutputBeforeTransition(this.clearOnShutdown || shutdownFrameSnapshot !== null)
-        this.renderOffset = 0
-        if (this.clearOnShutdown) {
-          this.lib.setRenderOffset(this.rendererPtr, 0)
-        }
       }
     } finally {
       shutdownFrameSnapshot?.destroy()
