@@ -605,6 +605,7 @@ test("split-footer custom stdout retains captured commits when native skips", as
 
   const renderer = new CliRenderer(stdin, stdout, 80, 24, {
     screenMode: "split-footer",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
   destroyFns.push(() => renderer.destroy())
@@ -628,6 +629,7 @@ test("split-footer coalesces render requests while waiting for feed idle", async
   const stdout = createCollectingStdout(80, 24)
   const renderer = new CliRenderer(createTestStdin(), stdout, 80, 24, {
     screenMode: "split-footer",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     clock,
   })
@@ -675,6 +677,7 @@ test("split-footer custom stdout retains captured commits when native fails and 
 
   const renderer = new CliRenderer(stdin, stdout, 80, 24, {
     screenMode: "split-footer",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
   destroyFns.push(() => renderer.destroy())
@@ -710,6 +713,7 @@ test("split-footer native failure without a feed does not schedule automatic ret
   const stdout = createPlainStdout()
   const renderer = new CliRenderer(createTestStdin(), stdout, 80, 24, {
     screenMode: "split-footer",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     bufferedOutput: "memory",
     clock,
@@ -783,6 +787,7 @@ test("destroy resolves idle waiters when a feed-idle render was scheduled", asyn
 
   const renderer = new CliRenderer(stdin, stdout, 80, 24, {
     screenMode: "split-footer",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
   destroyFns.push(() => {
@@ -830,6 +835,7 @@ test("suspend resolves idle waiters when a feed-idle render was scheduled", asyn
 
   const renderer = new CliRenderer(stdin, stdout, 80, 24, {
     screenMode: "split-footer",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
   destroyFns.push(() => {

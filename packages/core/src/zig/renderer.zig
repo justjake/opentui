@@ -1033,6 +1033,142 @@ pub const CliRenderer = struct {
         return self.renderResult(result_status);
     }
 
+    /// Terminal-native sibling of commitSplitFooterSnapshotBatched.
+    ///
+    /// Follows the same batched frame protocol (first call opens the frame,
+    /// middle calls append payload only, final call renders the footer diff and
+    /// closes the frame) but appends raw captured bytes instead of a rendered
+    /// snapshot buffer. row_columns_by_row carries the visible column width of
+    /// each '\n'-delimited row so SplitScrollback accounting stays consistent.
+    pub fn commitSplitFooterByteChunkBatched(
+        self: *CliRenderer,
+        text: []const u8,
+        row_columns_by_row: []const u32,
+        start_on_new_line: bool,
+        trailing_newline: bool,
+        pinned_render_offset: u32,
+        force: bool,
+        begin_frame: bool,
+        finalize_frame: bool,
+    ) RenderResult {
+        if (begin_frame) {
+            if (self.backend.prepareFrame() != .ok) {
+                const status = self.finishSkippedFrame();
+                return self.renderResult(status);
+            }
+
+            const now = std.time.microTimestamp();
+            const deltaTimeMs = @as(f64, @floatFromInt(now - self.lastRenderTime));
+            const deltaTime = deltaTimeMs / 1000.0;
+
+            self.lastRenderTime = now;
+            self.renderDebugOverlay();
+
+            var write_status: output.WriteStatus = .ok;
+            var result_status: RenderStatus = .rendered;
+            switch (self.backend) {
+                inline else => |*b| {
+                    b.beginFrame();
+                    var w = b.writer();
+                    beginRenderFrame(&w);
+                    var frame_started = true;
+                    self.applyPendingSplitFooterTransition(&w, &frame_started);
+
+                    // Track batch lifetime so subsequent calls can append into the same
+                    // output buffer without restarting frame state.
+                    self.splitBatchActive = !finalize_frame;
+                    self.splitBatchRedrawFooter = false;
+                    self.splitBatchDeltaTime = deltaTime;
+
+                    const redraw_footer = self.appendSplitFooterByteChunkCommit(
+                        &w,
+                        text,
+                        row_columns_by_row,
+                        start_on_new_line,
+                        trailing_newline,
+                        pinned_render_offset,
+                        force,
+                    );
+
+                    if (finalize_frame) {
+                        self.prepareRenderFrameWithWriter(&w, redraw_footer, true);
+                        write_status = b.endFrame();
+                        const status = renderStatusFromWrite(write_status);
+                        if (status == .failed) {
+                            result_status = self.finishFailedFrame();
+                        } else {
+                            result_status = status;
+                            self.collectFrameStats(deltaTime);
+                        }
+
+                        self.splitBatchActive = false;
+                        self.splitBatchRedrawFooter = false;
+                        self.splitBatchDeltaTime = 0;
+                    } else {
+                        result_status = .rendered;
+                        self.splitBatchRedrawFooter = redraw_footer;
+                    }
+                },
+            }
+
+            return self.renderResult(result_status);
+        }
+
+        // Defensive fallback: if caller forgot begin_frame, execute through a
+        // single-call frame instead of appending into undefined batch state.
+        if (!self.splitBatchActive) {
+            return self.commitSplitFooterByteChunkBatched(
+                text,
+                row_columns_by_row,
+                start_on_new_line,
+                trailing_newline,
+                pinned_render_offset,
+                force,
+                true,
+                true,
+            );
+        }
+
+        var write_status: output.WriteStatus = .ok;
+        var result_status: RenderStatus = .rendered;
+        switch (self.backend) {
+            inline else => |*b| {
+                var w = b.writer();
+                const redraw_footer = self.appendSplitFooterByteChunkCommit(
+                    &w,
+                    text,
+                    row_columns_by_row,
+                    start_on_new_line,
+                    trailing_newline,
+                    pinned_render_offset,
+                    force,
+                );
+                self.splitBatchRedrawFooter = self.splitBatchRedrawFooter or redraw_footer;
+
+                if (finalize_frame) {
+                    self.prepareRenderFrameWithWriter(&w, self.splitBatchRedrawFooter, true);
+                    write_status = b.endFrame();
+
+                    const status = renderStatusFromWrite(write_status);
+                    if (status == .failed) {
+                        result_status = self.finishFailedFrame();
+                    } else {
+                        result_status = status;
+                        self.collectFrameStats(self.splitBatchDeltaTime);
+                    }
+
+                    self.splitBatchActive = false;
+                    self.splitBatchRedrawFooter = false;
+                    self.splitBatchDeltaTime = 0;
+                } else {
+                    result_status = .rendered;
+                }
+            },
+        }
+
+        return self.renderResult(result_status);
+    }
+
     /// Serialization for one split append payload.
     ///
     /// This function intentionally does not emit syncSet/syncReset or footer
@@ -1157,6 +1293,21 @@ pub const CliRenderer = struct {
         }
     }
 
+    /// Serialization for one terminal-native byte chunk payload.
+    ///
+    /// The captured bytes are emitted verbatim so the terminal interprets the
+    /// application's own ANSI styling; a trailing reset prevents style state
+    /// from leaking into the footer repaint.
+    fn writeByteChunkCommit(
+        self: *CliRenderer,
+        writer: anytype,
+        text: []const u8,
+    ) void {
+        _ = self;
+        writer.writeAll(text) catch {};
+        writer.writeAll(ansi.ANSI.reset) catch {};
+    }
+
     /// Shared append path for all split payload sources.
     ///
     /// Contract: append payload first, then position for footer repaint in the
@@ -1247,6 +1398,109 @@ pub const CliRenderer = struct {
 
                 // Serialize payload rows at current output cursor.
                 self.writeSnapshotCommit(writer, snapshot, normalized_row_columns, trailing_newline);
+
+                if (use_bounded_scroll_region) {
+                    // Restore default full-height scroll region for regular repaint
+                    // and cursor operations after append is complete.
+                    writer.writeAll("\x1b[r") catch {};
+                }
+            }
+
+            self.renderOffset = next_render_offset;
+            if (redraw_footer) {
+                ansi.ANSI.moveToOutput(writer, 1, targetFooterTopLine) catch {};
+            }
+        } else {
+            self.renderOffset = next_render_offset;
+        }
+
+        return redraw_footer;
+    }
+
+    /// Terminal-native sibling of appendSplitFooterSnapshotCommit.
+    ///
+    /// Publishes row accounting from row_columns_by_row (computed JS-side from
+    /// the captured text), then writes the raw bytes at the split output cursor
+    /// inside the same bounded scroll region protocol used by snapshot commits.
+    fn appendSplitFooterByteChunkCommit(
+        self: *CliRenderer,
+        writer: anytype,
+        text: []const u8,
+        row_columns_by_row: []const u32,
+        start_on_new_line: bool,
+        trailing_newline: bool,
+        pinned_render_offset: u32,
+        force: bool,
+    ) bool {
+        const previousSurfaceOffset = self.renderOffset;
+        const previousOutputOffset = self.splitOutputOffset(previousSurfaceOffset);
+        const previousOutputColumn = self.splitScrollback.tail_column;
+        const payload_has_content = text.len > 0 and row_columns_by_row.len > 0;
+        const starts_mid_line = previousOutputColumn > 0 and start_on_new_line;
+        const starts_wrapped_line = previousOutputColumn >= self.width;
+        const previousFooterTopLine: u32 = @max(previousSurfaceOffset + 1, @as(u32, 1));
+
+        if (payload_has_content) {
+            // First update logical split scrollback state, then emit terminal I/O.
+            // Keeping model state authoritative makes repaint decisions deterministic.
+            if (starts_mid_line) {
+                self.splitScrollback.noteNewline();
+            }
+
+            for (row_columns_by_row, 0..) |row_columns, row_index| {
+                self.splitScrollback.publishRow(
+                    row_columns,
+                    self.width,
+                    row_index + 1 < row_columns_by_row.len or trailing_newline,
+                );
+            }
+
+            self.splitScrollback.published_rows = @min(self.splitScrollback.published_rows, pinned_render_offset);
+        }
+
+        const next_output_offset = self.splitScrollback.renderOffset(pinned_render_offset);
+        const next_render_offset = self.clampSplitSurfaceOffset(previousSurfaceOffset, pinned_render_offset);
+        const targetFooterTopLine: u32 = @max(next_render_offset + 1, @as(u32, 1));
+        // Footer redraw is only needed when offset changes (settling/pinning) or
+        // when an explicit force was requested by the caller.
+        const redraw_footer = force or previousSurfaceOffset != next_render_offset;
+        // When split scrollback is settled at the pinned boundary, newlines/wraps from
+        // appended output must scroll only the upper pane. Without a temporary DECSTBM
+        // region, terminals advance into the footer rows and overwrite them in place.
+        const use_bounded_scroll_region = payload_has_content and
+            pinned_render_offset > 0 and
+            next_render_offset == pinned_render_offset and
+            next_output_offset == next_render_offset;
+
+        if (payload_has_content or force) {
+            if (payload_has_content) {
+                // Clear rows that are transitioning from "footer surface" to scrollback before
+                // writing appended rows. If this happens after append, the clear itself is what
+                // gets scrolled and manifests as extra blank lines in history.
+                if (targetFooterTopLine > previousFooterTopLine) {
+                    var clear_line = previousFooterTopLine;
+                    while (clear_line < targetFooterTopLine) : (clear_line += 1) {
+                        ansi.ANSI.moveToOutput(writer, 1, clear_line) catch {};
+                        writer.writeAll("\x1b[2K") catch {};
+                    }
+                }
+
+                if (use_bounded_scroll_region) {
+                    // Temporarily bound scrolling to the upper pane so newline/wrap
+                    // from appended payload pushes history upward instead of stepping
+                    // through footer rows.
+                    writer.print("\x1b[1;{d}r", .{pinned_render_offset}) catch {};
+                }
+
+                moveToSplitOutputCursor(writer, previousOutputOffset, previousOutputColumn, self.width);
+                if (starts_mid_line or starts_wrapped_line) {
+                    // The prior commit left output cursor mid-row and caller asked
+                    // for newline anchoring. Emit CRLF before payload to preserve
+                    // logical row boundaries across commit chunks.
+                    writer.writeAll("\r\n") catch {};
+                }
+
+                self.writeByteChunkCommit(writer, text);
 
                 if (use_bounded_scroll_region) {
                     // Restore default full-height scroll region for regular repaint

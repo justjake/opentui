@@ -247,6 +247,7 @@ test("externalOutput records captured stdout in FIFO order", async () => {
     screenMode: "split-footer",
     footerHeight: 3,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     useThread: false,
   })
