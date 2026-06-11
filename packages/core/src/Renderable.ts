@@ -224,6 +224,14 @@ function bumpRenderListRevision(ctx: RenderContext): void {
   generationContext.__otuiRenderListRevision = getRenderListRevision(ctx) + 1
 }
 
+// Options for offscreen render traversals (renderToBuffer): allow rendering a
+// subtree as if it were the root, ignoring the node's own clipping and
+// visible-child filtering.
+interface RenderTraversalOptions {
+  ignoreSelfClip?: boolean
+  ignoreSelfVisibleChildFilter?: boolean
+}
+
 export abstract class Renderable extends BaseRenderable {
   static renderablesByNumber: Map<number, Renderable> = new Map()
 
@@ -1141,6 +1149,13 @@ export abstract class Renderable extends BaseRenderable {
     }
   }
 
+  public invalidateLayoutCacheRecursively(): void {
+    this._lastLayoutFrame = -1
+    for (const child of this._childrenInLayoutOrder) {
+      child.invalidateLayoutCacheRecursively()
+    }
+  }
+
   protected onLayoutResize(width: number, height: number): void {
     if (this._visible) {
       // TODO: Should probably .markDirty()
@@ -1392,7 +1407,7 @@ export abstract class Renderable extends BaseRenderable {
     return this._childrenInLayoutOrder.length
   }
 
-  public updateLayout(deltaTime: number, renderList: RenderCommand[] = []): void {
+  public updateLayout(deltaTime: number, renderList: RenderCommand[] = [], options: RenderTraversalOptions = {}): void {
     if (!this.visible) return
 
     this.onUpdate(deltaTime)
@@ -1433,7 +1448,8 @@ export abstract class Renderable extends BaseRenderable {
 
     this.ensureZIndexSorted()
 
-    const shouldPushScissor = this._overflow !== "visible" && this.width > 0 && this.height > 0
+    const shouldPushScissor =
+      !options.ignoreSelfClip && this._overflow !== "visible" && this.width > 0 && this.height > 0
     if (shouldPushScissor) {
       const scissorRect = this.getScissorRect()
       renderList.push({
@@ -1448,7 +1464,7 @@ export abstract class Renderable extends BaseRenderable {
     }
     // Most renderables expose all children. Skip building a visible-child list
     // unless a subclass actually performs viewport/style-based child filtering.
-    if (!this._hasVisibleChildFilter()) {
+    if (options.ignoreSelfVisibleChildFilter || !this._hasVisibleChildFilter()) {
       for (const child of this._childrenInZIndexOrder) {
         child.updateLayout(deltaTime, renderList)
       }

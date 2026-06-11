@@ -52,6 +52,7 @@ import {
 import { type Clock, type TimerHandle, SystemClock } from "./lib/clock.js"
 import { StdinParser, type StdinEvent, type StdinParserProtocolContext } from "./lib/stdin-parser.js"
 import { matchesKeyBinding } from "./lib/keybinding.internal.js"
+import { renderToBuffer, type RenderToBufferOptions } from "./render-to-buffer.js"
 import { RendererThemeMode } from "./renderer-theme-mode.js"
 
 registerEnvVar({
@@ -853,6 +854,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   // One-shot latch used to request a full split repaint after transitions
   // (resize/mode/output-path changes). Cleared on first renderNative tick.
   private forceFullRepaintRequested: boolean = false
+  // Depth counter for renderToBuffer() traversals. While > 0, render
+  // side-effects (hit grid, cursor, requestRender) are suppressed so an
+  // offscreen render cannot disturb the live frame.
+  private offscreenRenderDepth: number = 0
   // Upper bound for captured stdout commits consumed per native frame.
   // This is a visual smoothness control: smaller batches reduce frame envelope
   // churn and keep render latency predictable under heavy scrollback append load.
@@ -1388,20 +1393,36 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
   public addToHitGrid(x: number, y: number, width: number, height: number, id: number) {
     if (!this._useMouse) return
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     if (id !== this.capturedRenderable?.num) {
       this.lib.addToHitGrid(this.rendererPtr, x, y, width, height, id)
     }
   }
 
   public pushHitGridScissorRect(x: number, y: number, width: number, height: number): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this.lib.hitGridPushScissorRect(this.rendererPtr, x, y, width, height)
   }
 
   public popHitGridScissorRect(): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this.lib.hitGridPopScissorRect(this.rendererPtr)
   }
 
   public clearHitGridScissorRects(): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this.lib.hitGridClearScissorRects(this.rendererPtr)
   }
 
@@ -1504,7 +1525,19 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.scheduleRenderTimer()
   }
 
+  // Request a render pass that repaints the full surface (including the
+  // split-footer scrollback region) instead of the usual damage-tracked
+  // delta. Useful after an external process scribbled on the terminal.
+  public requestFullRepaintRender(): void {
+    this.forceFullRepaintRequested = true
+    this.requestRender()
+  }
+
   public requestRender() {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     if (this._controlState === RendererControlState.EXPLICIT_SUSPENDED) {
       return
     }
@@ -2429,7 +2462,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return tailColumn
   }
 
-  private enqueueRenderedScrollbackCommit(options: {
+  public enqueueRenderedScrollbackCommit(options: {
     snapshot: OptimizedBuffer
     rowColumns?: number
     startOnNewLine?: boolean
@@ -3658,6 +3691,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
   }
   public setMousePointer(style: MousePointerStyle): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this._currentMousePointerStyle = style
     this.lib.setCursorStyleOptions(this.rendererPtr, { cursor: style })
   }
@@ -3905,11 +3942,19 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   public static setCursorPosition(renderer: CliRenderer, x: number, y: number, visible: boolean = true): void {
+    if (renderer.offscreenRenderDepth > 0) {
+      return
+    }
+
     const lib = resolveRenderLib()
     lib.setCursorPosition(renderer.rendererPtr, x, y, visible)
   }
 
   public static setCursorStyle(renderer: CliRenderer, options: CursorStyleOptions): void {
+    if (renderer.offscreenRenderDepth > 0) {
+      return
+    }
+
     const lib = resolveRenderLib()
     lib.setCursorStyleOptions(renderer.rendererPtr, options)
     if (options.cursor !== undefined) {
@@ -3918,15 +3963,27 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   public static setCursorColor(renderer: CliRenderer, color: RGBA): void {
+    if (renderer.offscreenRenderDepth > 0) {
+      return
+    }
+
     const lib = resolveRenderLib()
     lib.setCursorColor(renderer.rendererPtr, color)
   }
 
   public setCursorPosition(x: number, y: number, visible: boolean = true): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this.lib.setCursorPosition(this.rendererPtr, x, y, visible)
   }
 
   public setCursorStyle(options: CursorStyleOptions): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this.lib.setCursorStyleOptions(this.rendererPtr, options)
     if (options.cursor !== undefined) {
       this._currentMousePointerStyle = options.cursor
@@ -3934,7 +3991,20 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   public setCursorColor(color: RGBA): void {
+    if (this.offscreenRenderDepth > 0) {
+      return
+    }
+
     this.lib.setCursorColor(this.rendererPtr, color)
+  }
+
+  public renderToBuffer(options: RenderToBufferOptions): OptimizedBuffer {
+    this.offscreenRenderDepth += 1
+    try {
+      return renderToBuffer(this, options)
+    } finally {
+      this.offscreenRenderDepth -= 1
+    }
   }
 
   public getCursorState() {
