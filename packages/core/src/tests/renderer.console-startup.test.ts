@@ -5,7 +5,7 @@ import { capture } from "../console.js"
 import { clearEnvCache } from "../lib/env.js"
 import { createTestRenderer, type TestRenderer } from "../testing/test-renderer.js"
 import { ManualClock } from "../testing/manual-clock.js"
-import { TextRenderable, type ScrollbackRenderContext } from "../index.js"
+import { BoxRenderable, TextRenderable, type ScrollbackRenderContext } from "../index.js"
 
 let renderer: TestRenderer | null = null
 let previousShowConsole: string | undefined
@@ -203,6 +203,162 @@ test("CliRenderer clamps split footer height to terminal height at startup", asy
   expect(renderer.height).toBe(5)
   expect((renderer as any)._splitHeight).toBe(5)
   expect((renderer as any).renderOffset).toBe(0)
+})
+
+test("CliRenderer auto split footer height grows and shrinks from flex layout", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: "auto",
+    minFooterHeight: 1,
+    maxFooterHeight: 5,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const footerContent = new BoxRenderable(renderer, {
+    id: "auto-footer-content",
+    width: "100%",
+    flexDirection: "column",
+  })
+  const firstRow = new BoxRenderable(renderer, { id: "auto-footer-row-1", width: "100%", height: 1 })
+  const secondRow = new BoxRenderable(renderer, { id: "auto-footer-row-2", width: "100%", height: 1 })
+  const thirdRow = new BoxRenderable(renderer, { id: "auto-footer-row-3", width: "100%", height: 1 })
+  footerContent.add(firstRow)
+  footerContent.add(secondRow)
+  footerContent.add(thirdRow)
+  renderer.root.add(footerContent)
+
+  await result.renderOnce()
+
+  expect(renderer.footerHeight).toBe(3)
+  expect(renderer.height).toBe(3)
+  expect((renderer as any)._splitHeight).toBe(3)
+
+  secondRow.visible = false
+  thirdRow.visible = false
+  await result.renderOnce()
+
+  expect(renderer.footerHeight).toBe(1)
+  expect(renderer.height).toBe(1)
+  expect((renderer as any)._splitHeight).toBe(1)
+})
+
+test("CliRenderer auto split footer shrink preserves the previous footer bottom edge while settling", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: "auto",
+    minFooterHeight: 1,
+    maxFooterHeight: 5,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+
+  const footerContent = new BoxRenderable(renderer, {
+    id: "auto-footer-settling-content",
+    width: "100%",
+    flexDirection: "column",
+  })
+  const rows = [1, 2, 3, 4].map(
+    (row) => new BoxRenderable(renderer!, { id: `auto-footer-settling-row-${row}`, width: "100%", height: 1 }),
+  )
+  rows.forEach((row) => footerContent.add(row))
+  renderer.root.add(footerContent)
+
+  await result.renderOnce()
+
+  expect(renderer.footerHeight).toBe(4)
+  expect((renderer as any).renderOffset).toBe(1)
+
+  rows[1]!.visible = false
+  rows[2]!.visible = false
+  rows[3]!.visible = false
+  await result.renderOnce()
+
+  expect(renderer.footerHeight).toBe(1)
+  expect((renderer as any).renderOffset).toBe(4)
+})
+
+test("CliRenderer auto split footer shrink moves a pinned footer down", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: "auto",
+    minFooterHeight: 1,
+    maxFooterHeight: 5,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+
+  const footerContent = new BoxRenderable(renderer, {
+    id: "auto-footer-pinned-content",
+    width: "100%",
+    flexDirection: "column",
+  })
+  const rows = [1, 2, 3, 4].map(
+    (row) => new BoxRenderable(renderer!, { id: `auto-footer-pinned-row-${row}`, width: "100%", height: 1 }),
+  )
+  rows.forEach((row) => footerContent.add(row))
+  renderer.root.add(footerContent)
+
+  await result.renderOnce()
+
+  for (let i = 0; i < 12; i += 1) {
+    ;(renderer as any).stdout.write(`line-${i}\n`)
+    await result.renderOnce()
+  }
+
+  expect(renderer.footerHeight).toBe(4)
+  expect((renderer as any).renderOffset).toBe(6)
+
+  rows[1]!.visible = false
+  rows[2]!.visible = false
+  rows[3]!.visible = false
+  await result.renderOnce()
+
+  expect(renderer.footerHeight).toBe(1)
+  expect(renderer.height).toBe(1)
+  expect((renderer as any)._splitHeight).toBe(1)
+  expect((renderer as any).renderOffset).toBe(9)
+})
+
+test("CliRenderer auto split footer height clamps to configured max", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: "auto",
+    minFooterHeight: 1,
+    maxFooterHeight: 4,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  renderer.root.add(
+    new BoxRenderable(renderer, {
+      id: "auto-footer-tall-content",
+      width: "100%",
+      height: 8,
+    }),
+  )
+
+  await result.renderOnce()
+
+  expect(renderer.footerHeight).toBe(4)
+  expect(renderer.height).toBe(4)
+  expect((renderer as any)._splitHeight).toBe(4)
 })
 
 test("CliRenderer rejects captured output outside split-footer mode", async () => {

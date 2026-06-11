@@ -51,6 +51,14 @@ import {
 } from "./lib/terminal-palette.js"
 import { calculateRenderGeometry } from "./lib/render-geometry.js"
 import {
+  DEFAULT_AUTO_FOOTER_MIN_HEIGHT,
+  DEFAULT_FOOTER_HEIGHT,
+  resolveAutoSplitFooterHeight,
+  resolveSplitFooterSizing,
+  type SplitFooterHeight,
+  type SplitFooterHeightMode,
+} from "./lib/split-footer-auto-layout.js"
+import {
   isCapabilityResponse,
   isPixelResolutionResponse,
   parsePixelResolution,
@@ -62,6 +70,7 @@ import { renderToBuffer, type RenderToBufferOptions } from "./render-to-buffer.j
 import { RendererThemeMode } from "./renderer-theme-mode.js"
 
 export type { ExternalOutputRendering } from "./lib/external-output-byte-chunk.js"
+export type { SplitFooterHeight, SplitFooterHeightMode } from "./lib/split-footer-auto-layout.js"
 
 export type ExternalOutputCaptureStderr = "auto" | "always" | "never" | NodeJS.WriteStream
 
@@ -187,8 +196,19 @@ export interface CliRendererConfig {
   // Choose where the renderer owns terminal space. Defaults to "alternate-screen".
   screenMode?: ScreenMode
 
-  // Set the requested footer height for "split-footer". Defaults to 12.
-  footerHeight?: number
+  /**
+   * Set the requested footer height for "split-footer". Defaults to 12.
+   *
+   * Use "auto" to resolve the footer height from the committed Yoga/Flexbox
+   * layout tree, clamped by minFooterHeight and maxFooterHeight.
+   */
+  footerHeight?: SplitFooterHeight
+
+  /** Minimum resolved footer height when footerHeight is "auto". Defaults to 1. */
+  minFooterHeight?: number
+
+  /** Maximum resolved footer height when footerHeight is "auto". Defaults to 12. */
+  maxFooterHeight?: number
 
   // Choose what happens to writes that go through `stdout.write`.
   externalOutputMode?: ExternalOutputMode
@@ -365,32 +385,17 @@ export interface SplitFooterReplayResetOptions {
   clearSavedLines?: boolean
 }
 
-const DEFAULT_FOOTER_HEIGHT = 12
 const MAX_SCROLLBACK_SURFACE_HEIGHT_PASSES = 4
 const TRANSPARENT_RGBA = RGBA.fromValues(0, 0, 0, 0)
 
 let scrollbackSurfaceCounter = 0
 
-function normalizeFooterHeight(footerHeight: number | undefined): number {
-  if (footerHeight === undefined) {
-    return DEFAULT_FOOTER_HEIGHT
-  }
-
-  if (!Number.isFinite(footerHeight)) {
-    throw new Error("footerHeight must be a finite number")
-  }
-
-  const normalizedFooterHeight = Math.trunc(footerHeight)
-  if (normalizedFooterHeight <= 0) {
-    throw new Error("footerHeight must be greater than 0")
-  }
-
-  return normalizedFooterHeight
-}
-
 function resolveModes(config: CliRendererConfig): {
   screenMode: ScreenMode
   footerHeight: number
+  footerHeightMode: SplitFooterHeightMode
+  minFooterHeight: number
+  maxFooterHeight: number
   externalOutputMode: ExternalOutputMode
   externalOutputRendering: ExternalOutputRendering
 } {
@@ -399,8 +404,7 @@ function resolveModes(config: CliRendererConfig): {
     screenMode = env.OTUI_USE_ALTERNATE_SCREEN ? "alternate-screen" : "main-screen"
   }
 
-  const footerHeight =
-    screenMode === "split-footer" ? normalizeFooterHeight(config.footerHeight) : DEFAULT_FOOTER_HEIGHT
+  const footerSizing = resolveSplitFooterSizing(screenMode, config)
 
   let externalOutputMode =
     config.externalOutputMode ?? (screenMode === "split-footer" ? "capture-stdout" : "passthrough")
@@ -414,7 +418,10 @@ function resolveModes(config: CliRendererConfig): {
 
   return {
     screenMode,
-    footerHeight,
+    footerHeight: footerSizing.height,
+    footerHeightMode: footerSizing.mode,
+    minFooterHeight: footerSizing.minHeight,
+    maxFooterHeight: footerSizing.maxHeight,
     externalOutputMode,
     externalOutputRendering: config.externalOutputRendering ?? "terminal-native",
   }
@@ -939,6 +946,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private autoFocus: boolean = true
   private _screenMode: ScreenMode = "alternate-screen"
   private _footerHeight: number = DEFAULT_FOOTER_HEIGHT
+  private _footerHeightMode: SplitFooterHeightMode = "fixed"
+  private _minFooterHeight: number = DEFAULT_AUTO_FOOTER_MIN_HEIGHT
+  private _maxFooterHeight: number = DEFAULT_FOOTER_HEIGHT
   private _externalOutputMode: ExternalOutputMode = "passthrough"
   private _externalOutputRendering: ExternalOutputRendering = "terminal-native"
   private _externalOutputCaptureStderrConfig: ExternalOutputCaptureStderr = "auto"
@@ -1142,7 +1152,15 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const lib = resolveRenderLib()
     const useMemoryBufferedOutput = config.bufferedOutput === "memory"
     const useFeedOutput = !this._usesProcessStdout && !useMemoryBufferedOutput
-    const { screenMode, footerHeight, externalOutputMode, externalOutputRendering } = resolveModes(config)
+    const {
+      screenMode,
+      footerHeight,
+      footerHeightMode,
+      minFooterHeight,
+      maxFooterHeight,
+      externalOutputMode,
+      externalOutputRendering,
+    } = resolveModes(config)
     const initialGeometry = calculateRenderGeometry(screenMode, width, height, footerHeight)
     const remoteMode = config.remote ?? (useFeedOutput ? true : undefined)
 
@@ -1241,6 +1259,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.renderOffset = screenMode === "split-footer" ? 0 : initialGeometry.renderOffset
 
     this._footerHeight = footerHeight
+    this._footerHeightMode = footerHeightMode
+    this._minFooterHeight = minFooterHeight
+    this._maxFooterHeight = maxFooterHeight
 
     this.rendererPtr = rendererPtr
     this.clearOnShutdown = config.clearOnShutdown ?? true
@@ -1864,13 +1885,20 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return this._footerHeight
   }
 
-  public set footerHeight(footerHeight: number) {
-    const normalizedFooterHeight = normalizeFooterHeight(footerHeight)
-    if (normalizedFooterHeight === this._footerHeight) {
+  public set footerHeight(footerHeight: SplitFooterHeight) {
+    const footerSizing = resolveSplitFooterSizing("split-footer", {
+      footerHeight,
+      minFooterHeight: this._minFooterHeight,
+      maxFooterHeight: this._maxFooterHeight,
+    })
+    if (footerSizing.mode === this._footerHeightMode && footerSizing.height === this._footerHeight) {
       return
     }
 
-    this._footerHeight = normalizedFooterHeight
+    this._footerHeightMode = footerSizing.mode
+    this._footerHeight = footerSizing.height
+    this._minFooterHeight = footerSizing.minHeight
+    this._maxFooterHeight = footerSizing.maxHeight
     if (this.screenMode === "split-footer") {
       this.applyScreenMode("split-footer")
     }
@@ -2780,6 +2808,28 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return createByteChunkExternalOutputCommit(deferredText)
   }
 
+  private resolveAutoSplitFooterHeightBeforeRender(): void {
+    if (this._footerHeightMode !== "auto" || this._screenMode !== "split-footer") {
+      return
+    }
+
+    const nextFooterHeight = resolveAutoSplitFooterHeight({
+      root: this.root,
+      terminalWidth: this._terminalWidth,
+      terminalHeight: this._terminalHeight,
+      currentHeight: this._splitHeight,
+      minHeight: this._minFooterHeight,
+      maxHeight: this._maxFooterHeight,
+    })
+
+    if (nextFooterHeight === this._footerHeight) {
+      return
+    }
+
+    this._footerHeight = nextFooterHeight
+    this.applyScreenMode("split-footer", true, false)
+  }
+
   private flushPendingSplitCommits(
     forceFooterRepaint: boolean = false,
     drainAll: boolean = false,
@@ -3153,6 +3203,16 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       (pendingSplitFooterTransition.scrollLines ?? 0) > 0
     const shrinkingSplitFooter = nextSplitHeight > 0 && nextSplitHeight < splitTransitionSourceHeight
     const growingSplitFooter = nextSplitHeight > splitTransitionSourceHeight && splitTransitionSourceHeight > 0
+    const autoShrinkingSplitFooter = this._footerHeightMode === "auto" && shrinkingSplitFooter
+    const bottomAnchoredShrinkOffset = autoShrinkingSplitFooter
+      ? Math.max(
+          nextSplitOutputOffset,
+          Math.min(
+            splitTransitionSourceSurfaceOffset + splitTransitionSourceHeight - nextSplitHeight,
+            nextPinnedRenderOffset,
+          ),
+        )
+      : nextSplitOutputOffset
     const nextSplitSurfaceOffset =
       screenMode !== "split-footer" || nextSplitHeight === 0
         ? 0
@@ -3160,16 +3220,18 @@ export class CliRenderer extends EventEmitter implements RenderContext {
           ? pendingSplitFooterTransition.targetTopLine - 1
           : pendingSplitFooterReturn
             ? splitTransitionSourceSurfaceOffset
-            : shrinkingSplitFooter && splitTransitionSourceSurfaceOffset > 0
-              ? splitTransitionSourceSurfaceOffset
-              : shrinkingSplitFooter
-                ? nextSplitOutputOffset
-                : growingSplitFooter
-                  ? Math.max(
-                      nextSplitOutputOffset,
-                      Math.min(splitTransitionSourceSurfaceOffset, nextPinnedRenderOffset),
-                    )
-                  : nextPinnedRenderOffset
+            : autoShrinkingSplitFooter
+              ? bottomAnchoredShrinkOffset
+              : shrinkingSplitFooter && splitTransitionSourceSurfaceOffset > 0
+                ? splitTransitionSourceSurfaceOffset
+                : shrinkingSplitFooter
+                  ? nextSplitOutputOffset
+                  : growingSplitFooter
+                    ? Math.max(
+                        nextSplitOutputOffset,
+                        Math.min(splitTransitionSourceSurfaceOffset, nextPinnedRenderOffset),
+                      )
+                    : nextPinnedRenderOffset
     const splitTransitionTargetTopLine = nextSplitSurfaceOffset + 1
     const splitViewportScrollLines = pendingSplitFooterViewportReturn
       ? (pendingSplitFooterTransition.scrollLines ?? 0)
@@ -4781,6 +4843,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       const end = performance.now()
       this.renderStats.frameCallbackTime = end - start
 
+      this.resolveAutoSplitFooterHeightBeforeRender()
       this.root.render(this.nextRenderBuffer, deltaTime)
 
       for (const postProcessFn of this.postProcessFns) {
