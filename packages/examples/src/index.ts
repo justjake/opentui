@@ -70,6 +70,7 @@ import { setupCommonDemoKeys } from "./lib/standalone-keys.js"
 import * as corePluginSlotsDemo from "./core-plugin-slots-demo.js"
 import * as wideGraphemeOverlayDemo from "./wide-grapheme-overlay-demo.js"
 import * as nativeAudioDemo from "./native-audio-demo.js"
+import * as renderToBufferSplitFooterDemo from "./render-to-buffer-split-footer-demo.js"
 
 type ExampleCategory =
   | "Layout & Composition"
@@ -87,6 +88,9 @@ interface ExampleDefinition {
   run?: (renderer: CliRenderer) => void | Promise<void>
   destroy?: (renderer: CliRenderer) => void
   unavailableMessage?: string
+  // When true, the running example owns Ctrl+C (e.g. to commit final
+  // scrollback content before destroy) and the selector stays out of the way.
+  handlesCtrlC?: boolean
 }
 
 interface Example extends ExampleDefinition {
@@ -317,6 +321,13 @@ const EXAMPLE_SECTIONS: ExampleSection[] = [
       description: "Focused split-footer surface demo for progressive text, code, and markdown scrollback",
       run: splitFooterStreamingDemo.run,
       destroy: splitFooterStreamingDemo.destroy,
+    },
+    {
+      name: "Render To Buffer Split Footer Demo",
+      description: "Mouse-enabled split-footer snapshot demo: Ctrl+C commits full scrollbox content before destroy",
+      run: renderToBufferSplitFooterDemo.run,
+      destroy: renderToBufferSplitFooterDemo.destroy,
+      handlesCtrlC: true,
     },
     {
       name: "Split Mode Demo (Experimental)",
@@ -1172,6 +1183,9 @@ class ExampleSelector {
   private setupKeyboardHandling(): void {
     this.renderer.keyInput.on("keypress", (key: KeyEvent) => {
       if (key.name === "c" && key.ctrl) {
+        if (!this.inMenu && this.currentExample?.handlesCtrlC) {
+          return
+        }
         this.cleanup()
         return
       }
