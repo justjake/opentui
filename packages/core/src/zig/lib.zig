@@ -700,6 +700,42 @@ export fn commitSplitFooterSnapshot(
     ));
 }
 
+export fn commitSplitFooterByteChunk(
+    renderer_handle: NativeHandle,
+    textPtr: ?[*]const u8,
+    textLen: u32,
+    rowColumnsByRowPtr: ?[*]const u32,
+    rowCount: u32,
+    startOnNewLine: bool,
+    trailingNewline: bool,
+    pinnedRenderOffset: u32,
+    force: bool,
+    beginFrame: bool,
+    finalizeFrame: bool,
+) u64 {
+    const renderer_ptr = acquireRenderer(renderer_handle) orelse return packFailedRenderResult();
+
+    // Terminal-native external output: JS passes the captured stdout/stderr
+    // bytes verbatim plus per-row visible column widths so split scrollback
+    // bookkeeping stays consistent without re-rendering the text natively.
+    const text = sliceFromPtrLen(textPtr, textLen);
+    const row_columns_by_row: []const u32 = if (rowCount == 0)
+        &[_]u32{}
+    else
+        rowColumnsByRowPtr.?[0..@as(usize, rowCount)];
+
+    return packRenderResult(renderer_ptr.commitSplitFooterByteChunkBatched(
+        text,
+        row_columns_by_row,
+        startOnNewLine,
+        trailingNewline,
+        pinnedRenderOffset,
+        force,
+        beginFrame,
+        finalizeFrame,
+    ));
+}
+
 export fn createOptimizedBuffer(width: u32, height: u32, respectAlpha: bool, widthMethod: u8, idPtr: ?[*]const u8, idLen: u32) NativeHandle {
     if (width == 0 or height == 0) {
         logger.warn("Invalid buffer dimensions: {}x{}", .{ width, height });

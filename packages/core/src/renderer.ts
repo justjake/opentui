@@ -14,6 +14,12 @@ import {
   type WidthMethod,
 } from "./types.js"
 import { RGBA, parseColor, type ColorInput } from "./lib/RGBA.js"
+import {
+  createByteChunkExternalOutputCommit,
+  type ByteChunkExternalOutputCommit,
+  type ExternalOutputRendering,
+} from "./lib/external-output-byte-chunk.js"
+import { hasSameOutputDestination } from "./lib/external-output-destination.js"
 import { sleep } from "./platform/runtime.js"
 import { OptimizedBuffer } from "./buffer.js"
 import {
@@ -54,6 +60,10 @@ import { StdinParser, type StdinEvent, type StdinParserProtocolContext } from ".
 import { matchesKeyBinding } from "./lib/keybinding.internal.js"
 import { renderToBuffer, type RenderToBufferOptions } from "./render-to-buffer.js"
 import { RendererThemeMode } from "./renderer-theme-mode.js"
+
+export type { ExternalOutputRendering } from "./lib/external-output-byte-chunk.js"
+
+export type ExternalOutputCaptureStderr = "auto" | "always" | "never" | NodeJS.WriteStream
 
 registerEnvVar({
   name: "OTUI_DUMP_CAPTURES",
@@ -183,6 +193,36 @@ export interface CliRendererConfig {
   // Choose what happens to writes that go through `stdout.write`.
   externalOutputMode?: ExternalOutputMode
 
+  /**
+   * Choose whether writes to `stderr.write` join captured external output to
+   * stdout.
+   *
+   * - "auto": capture stderr only when external output capture is active and
+   *    stderr appears to write to stdout's destination.
+   * - "always": capture process.stderr whenever external output capture is active.
+   * - "never": leave stderr alone. (Upstream @opentui/core behavior)
+   * - WriteStream: capture the provided stream whenever external output capture
+   *   is active.
+   *
+   * Defaults to "auto".
+   */
+  externalOutputCaptureStderr?: ExternalOutputCaptureStderr
+
+  /**
+   * Choose how captured external output is rendered in split-footer mode.
+   *
+   * - "emulated": render captured output through OpenTUI layout engine. ANSI
+   *   color/style sequences are currently unhandled and produce rendering
+   *   artifacts. (Upstream @opentui/core behavior)
+   * - "terminal-native": write captured output unmodified to its destination,
+   *   while accounting for its layout. This preserves terminal-native ANSI
+   *   behavior and wrapping, but some ANSI sequences may produce unexpected
+   *   behavior.
+   *
+   * Defaults to "terminal-native".
+   */
+  externalOutputRendering?: ExternalOutputRendering
+
   // Choose what the built-in console overlay does.
   consoleMode?: ConsoleMode
 
@@ -225,12 +265,27 @@ export type ScreenMode = "alternate-screen" | "main-screen" | "split-footer"
 // - "passthrough": Leave stdout alone.
 export type ExternalOutputMode = "capture-stdout" | "passthrough"
 
-export interface CliRendererExternalOutputEvent {
+export interface CliRendererSnapshotExternalOutputEvent {
+  kind: "snapshot"
   snapshot: OptimizedBuffer
   rowColumns: number
   startOnNewLine: boolean
   trailingNewline: boolean
 }
+
+export interface CliRendererByteChunkExternalOutputEvent {
+  kind: "bytes"
+  snapshot?: undefined
+  text: string
+  bytes: Uint8Array
+  rowColumnsByRow: Uint32Array
+  startOnNewLine: boolean
+  trailingNewline: boolean
+}
+
+export type CliRendererExternalOutputEvent =
+  | CliRendererSnapshotExternalOutputEvent
+  | CliRendererByteChunkExternalOutputEvent
 
 // Controls the built-in console overlay:
 //
@@ -337,6 +392,7 @@ function resolveModes(config: CliRendererConfig): {
   screenMode: ScreenMode
   footerHeight: number
   externalOutputMode: ExternalOutputMode
+  externalOutputRendering: ExternalOutputRendering
 } {
   let screenMode = config.screenMode ?? "alternate-screen"
   if (process.env.OTUI_USE_ALTERNATE_SCREEN !== undefined) {
@@ -360,15 +416,65 @@ function resolveModes(config: CliRendererConfig): {
     screenMode,
     footerHeight,
     externalOutputMode,
+    externalOutputRendering: config.externalOutputRendering ?? "terminal-native",
   }
 }
 
-type ExternalOutputCommit = {
+function resolveExternalOutputCaptureStderr(
+  externalOutputCaptureStderr: ExternalOutputCaptureStderr,
+  stdout: NodeJS.WriteStream,
+  externalOutputMode: ExternalOutputMode,
+): {
+  enabled: boolean
+  stream: NodeJS.WriteStream
+} {
+  if (externalOutputMode !== "capture-stdout") {
+    return {
+      enabled: false,
+      stream: process.stderr,
+    }
+  }
+
+  if (typeof externalOutputCaptureStderr !== "string") {
+    return {
+      enabled: true,
+      stream: externalOutputCaptureStderr,
+    }
+  }
+
+  if (externalOutputCaptureStderr === "always") {
+    return {
+      enabled: true,
+      stream: process.stderr,
+    }
+  }
+
+  if (externalOutputCaptureStderr === "never") {
+    return {
+      enabled: false,
+      stream: process.stderr,
+    }
+  }
+
+  if (externalOutputCaptureStderr === "auto") {
+    return {
+      enabled: hasSameOutputDestination(stdout, process.stderr),
+      stream: process.stderr,
+    }
+  }
+
+  throw new Error(`Invalid externalOutputCaptureStderr value: ${externalOutputCaptureStderr}`)
+}
+
+type ExternalOutputSnapshotCommit = {
+  kind: "snapshot"
   snapshot: OptimizedBuffer
   rowColumns: number
   startOnNewLine: boolean
   trailingNewline: boolean
 }
+
+type ExternalOutputCommit = ExternalOutputSnapshotCommit | ByteChunkExternalOutputCommit
 
 type PendingSplitFooterTransition = {
   mode: "viewport-scroll" | "clear-stale-rows"
@@ -418,7 +524,7 @@ class ExternalOutputQueue {
 
   drop(count: number): void {
     for (const commit of this.commits.splice(0, count)) {
-      commit.snapshot.destroy()
+      commit.snapshot?.destroy()
     }
   }
 
@@ -834,6 +940,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private _screenMode: ScreenMode = "alternate-screen"
   private _footerHeight: number = DEFAULT_FOOTER_HEIGHT
   private _externalOutputMode: ExternalOutputMode = "passthrough"
+  private _externalOutputRendering: ExternalOutputRendering = "terminal-native"
+  private _externalOutputCaptureStderrConfig: ExternalOutputCaptureStderr = "auto"
+  private _externalOutputCaptureStderr: boolean = false
+  private deferredByteChunkTrailingNewline: boolean = false
   private clearOnShutdown: boolean = true
   private _suspendedMouseEnabled: boolean = false
   private _previousControlState: RendererControlState = RendererControlState.IDLE
@@ -870,6 +980,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private externalOutputQueue = new ExternalOutputQueue()
   private pendingExternalOutputMode: ExternalOutputMode | null = null
   private realStdoutWrite: (chunk: any, encoding?: any, callback?: any) => boolean
+  private stderr: NodeJS.WriteStream
+  private realStderrWrite: (chunk: any, encoding?: any, callback?: any) => boolean
 
   private _useConsole: boolean = true
   private sigwinchHandler: () => void = (() => {
@@ -927,8 +1039,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     let capturedExternalOutput = ""
     for (const commit of capturedExternalOutputCommits) {
-      capturedExternalOutput += `[snapshot ${commit.snapshot.width}x${commit.snapshot.height}]\n`
-      commit.snapshot.destroy()
+      if (commit.kind === "snapshot") {
+        capturedExternalOutput += `[snapshot ${commit.snapshot.width}x${commit.snapshot.height}]\n`
+      } else {
+        capturedExternalOutput += `[bytes ${commit.bytes.length} bytes, ${commit.rowColumnsByRow.length} rows]\n`
+      }
+      commit.snapshot?.destroy()
     }
 
     if (capturedConsoleOutput.length > 0 || capturedExternalOutput.length > 0 || cachedLogs.length > 0) {
@@ -1026,7 +1142,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const lib = resolveRenderLib()
     const useMemoryBufferedOutput = config.bufferedOutput === "memory"
     const useFeedOutput = !this._usesProcessStdout && !useMemoryBufferedOutput
-    const { screenMode, footerHeight, externalOutputMode } = resolveModes(config)
+    const { screenMode, footerHeight, externalOutputMode, externalOutputRendering } = resolveModes(config)
     const initialGeometry = calculateRenderGeometry(screenMode, width, height, footerHeight)
     const remoteMode = config.remote ?? (useFeedOutput ? true : undefined)
 
@@ -1108,6 +1224,16 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._terminalHeight = height
     this._useThread = config.useThread
     this._externalOutputMode = externalOutputMode
+    this._externalOutputRendering = externalOutputRendering
+    this._externalOutputCaptureStderrConfig = config.externalOutputCaptureStderr ?? "auto"
+    const externalOutputCaptureStderr = resolveExternalOutputCaptureStderr(
+      this._externalOutputCaptureStderrConfig,
+      stdout,
+      externalOutputMode,
+    )
+    this.stderr = externalOutputCaptureStderr.stream
+    this.realStderrWrite = this.stderr.write
+    this._externalOutputCaptureStderr = externalOutputCaptureStderr.enabled
 
     this.width = initialGeometry.renderWidth
     this.height = initialGeometry.renderHeight
@@ -1242,7 +1368,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     rendererTracker.streamOwners.set(stdout, this)
     this._streamLeaseAcquired = true
     rendererTracker.renderers.add(this)
-    this.stdout.write = externalOutputMode === "capture-stdout" ? this.interceptStdoutWrite : this.realStdoutWrite
+    this.applyExternalOutputMode(externalOutputMode)
     this._openConsoleOnError = config.openConsoleOnError ?? process.env.NODE_ENV !== "production"
     this._onDestroy = config.onDestroy
 
@@ -1748,6 +1874,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
   }
 
+  public get externalOutputRendering(): ExternalOutputRendering {
+    return this._externalOutputRendering
+  }
+
+  public get externalOutputCaptureStderr(): boolean {
+    return this._externalOutputCaptureStderr
+  }
+
   public get externalOutputMode(): ExternalOutputMode {
     return this._externalOutputMode
   }
@@ -1789,6 +1923,26 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private applyExternalOutputMode(mode: ExternalOutputMode): void {
     this._externalOutputMode = mode
     this.stdout.write = mode === "capture-stdout" ? this.interceptStdoutWrite : this.realStdoutWrite
+    this.refreshExternalOutputCaptureStderr(mode)
+  }
+
+  private refreshExternalOutputCaptureStderr(mode: ExternalOutputMode): void {
+    if (this._externalOutputCaptureStderr) {
+      this.stderr.write = this.realStderrWrite
+    }
+
+    const externalOutputCaptureStderr = resolveExternalOutputCaptureStderr(
+      this._externalOutputCaptureStderrConfig,
+      this.stdout,
+      mode,
+    )
+    this.stderr = externalOutputCaptureStderr.stream
+    this.realStderrWrite = this.stderr.write
+    this._externalOutputCaptureStderr = externalOutputCaptureStderr.enabled
+
+    if (this._externalOutputCaptureStderr) {
+      this.stderr.write = this.interceptStderrWrite
+    }
   }
 
   private afterExternalOutputModeChanged(previousMode: ExternalOutputMode, mode: ExternalOutputMode): void {
@@ -2434,10 +2588,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       tailColumn = 0
     }
 
-    const rowWidths = this.getSnapshotRowWidths(commit.snapshot, commit.rowColumns)
-    for (const [index, rowWidth] of rowWidths.entries()) {
-      tailColumn = this.advanceSplitTailColumn(tailColumn, rowWidth, width)
-      if (index < rowWidths.length - 1 || commit.trailingNewline) {
+    const rowColumnsByRow =
+      commit.kind === "snapshot"
+        ? this.getSnapshotRowWidths(commit.snapshot, commit.rowColumns)
+        : commit.rowColumnsByRow
+    for (let index = 0; index < rowColumnsByRow.length; index += 1) {
+      const rowColumns = rowColumnsByRow[index] ?? 0
+      tailColumn = this.advanceSplitTailColumn(tailColumn, rowColumns, width)
+      if (index < rowColumnsByRow.length - 1 || commit.trailingNewline) {
         tailColumn = 0
       }
     }
@@ -2476,6 +2634,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     )
 
     this.enqueueSplitCommit({
+      kind: "snapshot",
       snapshot: options.snapshot,
       rowColumns,
       startOnNewLine: options.startOnNewLine ?? true,
@@ -2518,6 +2677,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       snapshotRoot.add(snapshotRenderable)
       snapshotRoot.render(snapshotBuffer, 0)
       return {
+        kind: "snapshot",
         snapshot: snapshotBuffer,
         rowColumns,
         startOnNewLine: false,
@@ -2599,6 +2759,25 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return commits
   }
 
+  private createByteChunkStdoutCommit(text: string): ByteChunkExternalOutputCommit | null {
+    if (text.length === 0) {
+      return null
+    }
+
+    let deferredText = text
+    if (this.deferredByteChunkTrailingNewline) {
+      deferredText = `\r\n${deferredText}`
+      this.deferredByteChunkTrailingNewline = false
+    }
+
+    if (deferredText.endsWith("\n")) {
+      deferredText = deferredText.slice(0, -1)
+      this.deferredByteChunkTrailingNewline = true
+    }
+
+    return createByteChunkExternalOutputCommit(deferredText)
+  }
+
   private flushPendingSplitCommits(
     forceFooterRepaint: boolean = false,
     drainAll: boolean = false,
@@ -2609,6 +2788,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const commits = this.externalOutputQueue.peek(drainAll ? Number.POSITIVE_INFINITY : this.maxSplitCommitsPerFrame)
     let hasCommittedOutput = false
     const lastCommitIndex = commits.length - 1
+    const hasMixedCommitKinds = commits.some((commit) => commit.kind !== commits[0]?.kind)
     let acceptedCommits = 0
     let nativeBackpressured = false
     let nativeFailed = false
@@ -2618,23 +2798,39 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       // chunk negates batching and reintroduces duplicate clear/move traffic.
       const forceCommit = forceFooterRepaint && index === lastCommitIndex
       // beginFrame/finalizeFrame tell native code whether this commit opens or
-      // closes the shared frame envelope. Intermediate commits append payload only.
-      const beginFrame = index === 0
-      const finalizeFrame = index === lastCommitIndex
+      // closes the shared frame envelope. Intermediate commits append payload
+      // only. Keep homogeneous bursts batched, but do not mix rendered snapshots
+      // and terminal-native byte chunks in one native frame because the FFI path
+      // can drop bytes from mixed batches.
+      const beginFrame = hasMixedCommitKinds ? true : index === 0
+      const finalizeFrame = hasMixedCommitKinds ? true : index === lastCommitIndex
 
       // Keep split append policy in native code so every producer (captured stdout
       // and writeToScrollback) shares the same cursor/scrollback invariants.
-      const nativeResult = this.lib.commitSplitFooterSnapshot(
-        this.rendererPtr,
-        commit.snapshot,
-        commit.rowColumns,
-        commit.startOnNewLine,
-        commit.trailingNewline,
-        this.getSplitPinnedRenderOffset(),
-        forceCommit,
-        beginFrame,
-        finalizeFrame,
-      )
+      const nativeResult =
+        commit.kind === "snapshot"
+          ? this.lib.commitSplitFooterSnapshot(
+              this.rendererPtr,
+              commit.snapshot,
+              commit.rowColumns,
+              commit.startOnNewLine,
+              commit.trailingNewline,
+              this.getSplitPinnedRenderOffset(),
+              forceCommit,
+              beginFrame,
+              finalizeFrame,
+            )
+          : this.lib.commitSplitFooterByteChunk(
+              this.rendererPtr,
+              commit.bytes,
+              commit.rowColumnsByRow,
+              commit.startOnNewLine,
+              commit.trailingNewline,
+              this.getSplitPinnedRenderOffset(),
+              forceCommit,
+              beginFrame,
+              finalizeFrame,
+            )
       if (nativeResult.status === NATIVE_RENDER_STATUS_SKIPPED) {
         nativeBackpressured = true
         break
@@ -2693,21 +2889,31 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return "rendered"
   }
 
-  private interceptStdoutWrite = (chunk: any, encoding?: any, callback?: any): boolean => {
+  private interceptCapturedWrite(chunk: any, encoding?: any, callback?: any): boolean {
     const resolvedCallback = typeof encoding === "function" ? encoding : callback
     const resolvedEncoding = typeof encoding === "string" ? encoding : undefined
     const text = typeof chunk === "string" ? chunk : (chunk?.toString(resolvedEncoding) ?? "")
 
     if (this._externalOutputMode === "capture-stdout" && this._screenMode === "split-footer" && this._splitHeight > 0) {
-      // Capture mode intentionally diverts stdout into split commit snapshots
-      // instead of writing directly to process stdout. Native flushing will append
-      // and repaint in one controlled frame, which is what avoids footer flicker.
-      const commits = this.createStdoutSnapshotCommits(text)
-      for (const commit of commits) {
-        this.enqueueSplitCommit(commit)
+      // Capture mode intentionally diverts stream writes into split commits.
+      // Native flushing appends and repaints in one controlled frame, which is
+      // what avoids footer flicker.
+      let enqueuedCommit = false
+      if (this._externalOutputRendering === "terminal-native") {
+        const commit = this.createByteChunkStdoutCommit(text)
+        if (commit !== null) {
+          this.enqueueSplitCommit(commit)
+          enqueuedCommit = true
+        }
+      } else {
+        const commits = this.createStdoutSnapshotCommits(text)
+        for (const commit of commits) {
+          this.enqueueSplitCommit(commit)
+        }
+        enqueuedCommit = commits.length > 0
       }
 
-      if (commits.length > 0) {
+      if (enqueuedCommit) {
         // Defer actual terminal writes to the render loop so commits can be batched.
         this.requestRender()
       }
@@ -2718,6 +2924,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
 
     return true
+  }
+
+  private interceptStdoutWrite = (chunk: any, encoding?: any, callback?: any): boolean => {
+    return this.interceptCapturedWrite(chunk, encoding, callback)
+  }
+
+  private interceptStderrWrite = (chunk: any, encoding?: any, callback?: any): boolean => {
+    return this.interceptCapturedWrite(chunk, encoding, callback)
   }
 
   private getSplitPinnedRenderOffset(): number {
@@ -3079,8 +3293,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const outputCommits = this.externalOutputQueue.claim()
     let output = ""
     for (const commit of outputCommits) {
-      output += `[snapshot ${commit.snapshot.width}x${commit.snapshot.height}]\n`
-      commit.snapshot.destroy()
+      if (commit.kind === "snapshot") {
+        output += `[snapshot ${commit.snapshot.width}x${commit.snapshot.height}]\n`
+      } else {
+        output += `[bytes ${commit.bytes.length} bytes, ${commit.rowColumnsByRow.length} rows]\n`
+      }
+      commit.snapshot?.destroy()
     }
 
     const rendererStartLine = this.renderOffset + 1
@@ -4368,6 +4586,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._externalOutputMode = "passthrough"
     this.pendingExternalOutputMode = null
     this.stdout.write = this.realStdoutWrite
+    if (this._externalOutputCaptureStderr) {
+      this.stderr.write = this.realStderrWrite
+    }
     this.externalOutputQueue.clear()
 
     // Teardown ordering for the feed backend is subtle and must satisfy two

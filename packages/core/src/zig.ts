@@ -302,6 +302,12 @@ function getOpenTUILib(libPath?: string) {
       args: ["u32", "u32", "u32", "bool", "bool", "u32", "bool", "bool", "bool"],
       returns: "u64",
     },
+    // Terminal-native sibling of commitSplitFooterSnapshot: appends raw captured
+    // bytes to split scrollback instead of a rendered snapshot buffer.
+    commitSplitFooterByteChunk: {
+      args: ["u32", "ptr", "u32", "ptr", "u32", "bool", "bool", "u32", "bool", "bool", "bool"],
+      returns: "u64",
+    },
     getNextBuffer: {
       args: ["u32"],
       returns: "u32",
@@ -1714,6 +1720,17 @@ export interface RenderLib extends AudioEngineLib {
     beginFrame?: boolean,
     finalizeFrame?: boolean,
   ) => NativeRenderOperationResult
+  commitSplitFooterByteChunk: (
+    renderer: RendererHandle,
+    bytes: Uint8Array,
+    rowColumnsByRow: Uint32Array,
+    startOnNewLine: boolean,
+    trailingNewline: boolean,
+    pinnedRenderOffset: number,
+    force: boolean,
+    beginFrame?: boolean,
+    finalizeFrame?: boolean,
+  ) => NativeRenderOperationResult
   getNextBuffer: (renderer: RendererHandle) => OptimizedBuffer
   getCurrentBuffer: (renderer: RendererHandle) => OptimizedBuffer
   rendererSetPaletteState: (
@@ -2947,6 +2964,34 @@ class FFIRenderLib implements RenderLib {
         renderer,
         snapshot.ptr,
         rowColumns,
+        ffiBool(startOnNewLine),
+        ffiBool(trailingNewline),
+        pinnedRenderOffset,
+        ffiBool(force),
+        ffiBool(beginFrame),
+        ffiBool(finalizeFrame),
+      ),
+    )
+  }
+
+  public commitSplitFooterByteChunk(
+    renderer: Pointer,
+    bytes: Uint8Array,
+    rowColumnsByRow: Uint32Array,
+    startOnNewLine: boolean,
+    trailingNewline: boolean,
+    pinnedRenderOffset: number,
+    force: boolean,
+    beginFrame: boolean = true,
+    finalizeFrame: boolean = true,
+  ): NativeRenderOperationResult {
+    return this.unpackRenderOperationResult(
+      this.opentui.symbols.commitSplitFooterByteChunk(
+        renderer,
+        ptrOrNull(bytes),
+        bytes.length,
+        ptrOrNull(rowColumnsByRow),
+        rowColumnsByRow.length,
         ffiBool(startOnNewLine),
         ffiBool(trailingNewline),
         pinnedRenderOffset,

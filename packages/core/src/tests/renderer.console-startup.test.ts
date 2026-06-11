@@ -156,6 +156,7 @@ test("CliRenderer applies explicit screen and output modes", async () => {
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "terminal-native",
     consoleMode: "disabled",
   })
 
@@ -164,6 +165,7 @@ test("CliRenderer applies explicit screen and output modes", async () => {
   expect(renderer.screenMode).toBe("split-footer")
   expect(renderer.footerHeight).toBe(6)
   expect(renderer.externalOutputMode).toBe("capture-stdout")
+  expect(renderer.externalOutputRendering).toBe("terminal-native")
   expect(renderer.consoleMode).toBe("disabled")
 })
 
@@ -407,6 +409,7 @@ test("CliRenderer preserves append order when writeToScrollback and stdout captu
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -460,6 +463,7 @@ test("CliRenderer flushes captured output before switching to passthrough in spl
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -493,6 +497,7 @@ test("CliRenderer drains all pending split commits before switching to passthrou
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -520,6 +525,7 @@ test("CliRenderer keeps stdout captured until a deferred passthrough switch drai
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -564,6 +570,7 @@ test("CliRenderer drains deferred passthrough output before leaving split-footer
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -696,6 +703,7 @@ test("CliRenderer flushes pending split output before resize applies new geometr
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1031,6 +1039,7 @@ test("CliRenderer preserves captured split output when switching output mode whi
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1065,6 +1074,7 @@ test("CliRenderer preserves captured split output until startup cursor seed unbl
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     clock,
   })
@@ -1104,6 +1114,7 @@ test("CliRenderer flushes pending split output on suspend even when startup curs
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1216,6 +1227,7 @@ test("CliRenderer destroy flushes split output before clearing split footer surf
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1304,6 +1316,7 @@ test("CliRenderer destroy does not clear split footer surface when clearOnShutdo
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
     clearOnShutdown: false,
   })
@@ -1365,6 +1378,7 @@ test("CliRenderer split-footer captures direct console writes when console mode 
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1425,6 +1439,7 @@ test("CliRenderer split-footer forwards forced repaint flag to final pending com
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1481,6 +1496,7 @@ test("CliRenderer split-footer starts in settling phase and then pins as output 
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1573,6 +1589,7 @@ test("CliRenderer split-footer grow then shrink back before frame keeps grown to
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -1988,6 +2005,7 @@ test("CliRenderer split-footer commits only unpublished captured output chunks",
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -2028,6 +2046,7 @@ test("CliRenderer split-footer routes captured output through snapshot native co
     screenMode: "split-footer",
     footerHeight: 6,
     externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
     consoleMode: "disabled",
   })
 
@@ -2052,6 +2071,265 @@ test("CliRenderer split-footer routes captured output through snapshot native co
 
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   splitCommitSpy.mockRestore()
+})
+
+test("CliRenderer split-footer terminal-native captured stdout preserves logical writes", async () => {
+  const result = await createTestRenderer({
+    width: 4,
+    height: 8,
+    screenMode: "split-footer",
+    footerHeight: 3,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "terminal-native",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const lib = (renderer as any).lib
+  const snapshotCommitSpy = spyOn(lib, "commitSplitFooterSnapshot")
+  const byteChunkCommitSpy = spyOn(lib, "commitSplitFooterByteChunk")
+
+  ;(renderer as any).stdout.write("\x1b[31mabcdef\x1b[0m\n")
+  await result.renderOnce()
+
+  expect(snapshotCommitSpy).not.toHaveBeenCalled()
+  expect(byteChunkCommitSpy).toHaveBeenCalledTimes(1)
+  const byteChunkArgs = byteChunkCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
+  expect(new TextDecoder().decode(byteChunkArgs[1])).toBe("\x1b[31mabcdef\x1b[0m")
+  expect(Array.from(byteChunkArgs[2])).toEqual([6])
+  expect(byteChunkArgs[4]).toBe(false)
+  expect((renderer as any).renderOffset).toBe(2)
+
+  snapshotCommitSpy.mockRestore()
+  byteChunkCommitSpy.mockRestore()
+})
+
+test("CliRenderer split-footer terminal-native does not batch byte chunks with snapshot commits", async () => {
+  const result = await createTestRenderer({
+    width: 20,
+    height: 8,
+    screenMode: "split-footer",
+    footerHeight: 3,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "terminal-native",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const lib = (renderer as any).lib
+  const snapshotCommitSpy = spyOn(lib, "commitSplitFooterSnapshot")
+  const byteChunkCommitSpy = spyOn(lib, "commitSplitFooterByteChunk")
+
+  try {
+    renderer.writeToScrollback(textScrollbackWrite(""))
+    ;(renderer as any).stdout.write("\x1b[31mhello\x1b[0m\n")
+
+    await result.renderOnce()
+
+    expect(snapshotCommitSpy).toHaveBeenCalledTimes(1)
+    expect(byteChunkCommitSpy).toHaveBeenCalledTimes(1)
+
+    const snapshotArgs = snapshotCommitSpy.mock.calls[0] as [
+      unknown,
+      unknown,
+      number,
+      boolean,
+      boolean,
+      number,
+      boolean,
+      boolean,
+      boolean,
+    ]
+    const byteChunkArgs = byteChunkCommitSpy.mock.calls[0] as [
+      unknown,
+      Uint8Array,
+      Uint32Array,
+      boolean,
+      boolean,
+      number,
+      boolean,
+      boolean,
+      boolean,
+    ]
+
+    expect(snapshotArgs[7]).toBe(true)
+    expect(snapshotArgs[8]).toBe(true)
+    expect(new TextDecoder().decode(byteChunkArgs[1])).toBe("\x1b[31mhello\x1b[0m")
+    expect(byteChunkArgs[7]).toBe(true)
+    expect(byteChunkArgs[8]).toBe(true)
+  } finally {
+    snapshotCommitSpy.mockRestore()
+    byteChunkCommitSpy.mockRestore()
+  }
+})
+
+test("CliRenderer split-footer terminal-native defers trailing newline until following output", async () => {
+  const result = await createTestRenderer({
+    width: 20,
+    height: 8,
+    screenMode: "split-footer",
+    footerHeight: 3,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "terminal-native",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const lib = (renderer as any).lib
+  const byteChunkCommitSpy = spyOn(lib, "commitSplitFooterByteChunk")
+
+  try {
+    ;(renderer as any).stdout.write("line-1\n")
+    await result.renderOnce()
+
+    ;(renderer as any).stdout.write("line-2\n")
+    await result.renderOnce()
+
+    expect(byteChunkCommitSpy).toHaveBeenCalledTimes(2)
+
+    const firstArgs = byteChunkCommitSpy.mock.calls[0] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
+    expect(new TextDecoder().decode(firstArgs[1])).toBe("line-1")
+    expect(Array.from(firstArgs[2])).toEqual([6])
+    expect(firstArgs[4]).toBe(false)
+
+    const secondArgs = byteChunkCommitSpy.mock.calls[1] as [unknown, Uint8Array, Uint32Array, boolean, boolean]
+    expect(new TextDecoder().decode(secondArgs[1])).toBe("\r\nline-2")
+    expect(Array.from(secondArgs[2])).toEqual([0, 6])
+    expect(secondArgs[4]).toBe(false)
+  } finally {
+    byteChunkCommitSpy.mockRestore()
+  }
+})
+
+test("CliRenderer split-footer captures configured stderr stream", async () => {
+  const stderr = {
+    write: () => true,
+  } as any as NodeJS.WriteStream
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
+    externalOutputCaptureStderr: stderr,
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  const lib = (renderer as any).lib
+  const splitCommitSpy = spyOn(lib, "commitSplitFooterSnapshot")
+  const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
+  const payloads: string[] = []
+
+  lib.commitSplitFooterSnapshot = (...args: any[]) => {
+    payloads.push(new TextDecoder().decode(args[1].getRealCharBytes(true)).trim())
+    return originalCommitSplitFooterSnapshot(...args)
+  }
+
+  ;(renderer as any).stdout.write("stdout-line\n")
+  stderr.write("stderr-line\n")
+  await result.renderOnce()
+
+  expect(renderer.externalOutputCaptureStderr).toBe(true)
+  expect(splitCommitSpy).toHaveBeenCalledTimes(2)
+  expect(payloads[0]).toContain("stdout-line")
+  expect(payloads[1]).toContain("stderr-line")
+
+  lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
+  splitCommitSpy.mockRestore()
+})
+
+test("CliRenderer does not capture stderr when external output mode is passthrough", async () => {
+  const stderrWrite = () => true
+  const stderr = {
+    write: stderrWrite,
+  } as any as NodeJS.WriteStream
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "passthrough",
+    externalOutputCaptureStderr: stderr,
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
+  expect(stderr.write).toBe(stderrWrite)
+})
+
+test("CliRenderer does not inspect stderr destination while external output mode is passthrough", async () => {
+  const stdout = {
+    columns: 40,
+    rows: 10,
+    write: () => true,
+    get fd() {
+      throw new Error("stdout fd should not be inspected")
+    },
+  } as any as NodeJS.WriteStream
+  const result = await createTestRenderer({
+    stdout,
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "passthrough",
+    externalOutputCaptureStderr: "auto",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
+})
+
+test("CliRenderer auto-captures stderr only when it shares stdout's destination", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputCaptureStderr: "auto",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
+  renderer.destroy()
+
+  const sharedResult = await createTestRenderer({
+    stdout: process.stderr,
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputCaptureStderr: "auto",
+    consoleMode: "disabled",
+  })
+
+  renderer = sharedResult.renderer
+  expect(renderer.externalOutputCaptureStderr).toBe(true)
+})
+
+test("CliRenderer never captures stderr when externalOutputCaptureStderr is never", async () => {
+  const result = await createTestRenderer({
+    stdout: process.stderr,
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputCaptureStderr: "never",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  expect(renderer.externalOutputCaptureStderr).toBe(false)
 })
 
 test("CliRenderer split-footer native scrollback tracks wrapped tail state across commits", async () => {
