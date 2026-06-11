@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createTestRenderer, MouseButtons, type MockMouse, type TestRenderer } from "../testing.js"
 import { Renderable, type RenderableOptions } from "../Renderable.js"
-import type { MouseEvent } from "../renderer.js"
+import { CliRenderEvents, type CliRendererRawMouseEvent, type MouseEvent } from "../renderer.js"
 import type { RenderContext } from "../types.js"
 import type { Selection } from "../lib/selection.js"
 
@@ -1308,6 +1308,33 @@ describe("renderer handleMouseData split height", () => {
       await Promise.resolve()
 
       expect(sequences.length).toBeGreaterThan(beforeSequences)
+    } finally {
+      renderer.destroy()
+    }
+  })
+
+  test("raw mouse event observes split-footer input before coordinate adjustment", async () => {
+    try {
+      const rawEvents: CliRendererRawMouseEvent[] = []
+      renderer.on(CliRenderEvents.RAW_MOUSE, (event) => {
+        rawEvents.push(event)
+      })
+
+      await renderOnce()
+
+      const renderOffset = baseHeight - splitHeight
+      await mockMouse.pressDown(3, Math.max(0, renderOffset - 1))
+      await mockMouse.pressDown(4, renderOffset + 2)
+
+      expect(rawEvents).toHaveLength(2)
+
+      expect(rawEvents[0]!.input).toMatchObject({ type: "down", x: 3, y: renderOffset - 1 })
+      expect(rawEvents[0]!.pendingEvent).toMatchObject({ type: "down", x: 3, y: renderOffset - 1 })
+
+      expect(rawEvents[1]!.input).toMatchObject({ type: "down", x: 4, y: renderOffset + 2 })
+      expect(rawEvents[1]!.pendingEvent).toMatchObject({ type: "down", x: 4, y: 2 })
+      expect(rawEvents[1]!.input).not.toBe(rawEvents[1]!.pendingEvent)
+      expect(rawEvents[1]!.input.modifiers).not.toBe(rawEvents[1]!.pendingEvent.modifiers)
     } finally {
       renderer.destroy()
     }

@@ -11,7 +11,7 @@ const packageRoot = testFilePath.includes(`${sep}.node-test${sep}`)
   : resolve(testDir, "..", "..")
 const workspaceRoot = resolve(packageRoot, "..", "..")
 
-const runFixture = (code: number, mode: "idle" | "during-render" = "idle") => {
+const runFixture = (code: number, mode: "idle" | "during-render" | "multi" = "idle") => {
   const result = spawnSync(process.execPath, [...getFixtureRuntimeArgs(), fixturePath, code.toString(), mode], {
     cwd: packageRoot,
     env: process.env,
@@ -50,6 +50,14 @@ describe("destroy on process exit", () => {
 
     expect(result.status).toBe(1)
     expect(stdout).toContain("raw mode disabled")
+  })
+
+  it("it should destroy all live renderers at process exit", () => {
+    const { result, stdout } = runFixture(0, "multi")
+
+    expect(result.status).toBe(0)
+    expect(stdout).toContain("raw mode disabled")
+    expect(stdout).toContain("second raw mode disabled")
   })
 
   it("it should suspend the renderer when destroy happens during an active frame in an exit handler", () => {

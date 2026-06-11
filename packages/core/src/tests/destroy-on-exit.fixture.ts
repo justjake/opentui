@@ -4,17 +4,21 @@ import { createTestRenderer } from "../testing.js"
 const code = parseInt(process.argv[2] ?? "0", 10)
 const mode = process.argv[3] ?? "idle"
 
-const stdin = new Readable({ read() {} }) as NodeJS.ReadStream & {
-  setRawMode: (enabled: boolean) => NodeJS.ReadStream
-}
-stdin.setRawMode = (enabled) => {
-  if (!enabled) {
-    console.log("raw mode disabled")
+function createStdin(label: string) {
+  const stdin = new Readable({ read() {} }) as NodeJS.ReadStream & {
+    setRawMode: (enabled: boolean) => NodeJS.ReadStream
   }
+  stdin.setRawMode = (enabled) => {
+    if (!enabled) {
+      console.log(`${label}raw mode disabled`)
+    }
+    return stdin
+  }
+
   return stdin
 }
 
-const { renderer } = await createTestRenderer({ width: 20, height: 10, stdin })
+const { renderer } = await createTestRenderer({ width: 20, height: 10, stdin: createStdin("") })
 const lib = (renderer as any).lib
 const originalSuspendRenderer = lib.suspendRenderer.bind(lib)
 lib.suspendRenderer = (rendererPtr: unknown) => {
@@ -22,9 +26,12 @@ lib.suspendRenderer = (rendererPtr: unknown) => {
   originalSuspendRenderer(rendererPtr)
 }
 
-process.on("exit", () => {
-  renderer.destroy()
-})
+// No manual process.on("exit") hook: the renderer registers its own exit
+// handler, which is what these tests exercise.
+
+if (mode === "multi") {
+  await createTestRenderer({ width: 20, height: 10, stdin: createStdin("second ") })
+}
 
 if (mode === "during-render") {
   renderer.setFrameCallback(async () => {

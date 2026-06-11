@@ -599,6 +599,14 @@ export function buildKittyKeyboardFlags(config: KittyKeyboardOptions | null | un
   return flags
 }
 
+function cloneRawMouseEvent(mouseEvent: RawMouseEvent): RawMouseEvent {
+  return {
+    ...mouseEvent,
+    modifiers: { ...mouseEvent.modifiers },
+    scroll: mouseEvent.scroll ? { ...mouseEvent.scroll } : undefined,
+  }
+}
+
 export class MouseEvent {
   public readonly type: MouseEventType
   public readonly button: number
@@ -643,6 +651,15 @@ export class MouseEvent {
   public preventDefault(): void {
     this._defaultPrevented = true
   }
+}
+
+// Payload of CliRenderEvents.RAW_MOUSE. `input` is an immutable snapshot of
+// the parsed mouse event before any renderer adjustment; `pendingEvent` is
+// the live object the renderer continues to process (split-footer mode
+// rewrites its coordinates), so listeners can observe or modify it.
+export interface CliRendererRawMouseEvent {
+  input: Readonly<RawMouseEvent>
+  pendingEvent: RawMouseEvent
 }
 
 export enum MouseButton {
@@ -694,6 +711,7 @@ export enum CliRenderEvents {
   RESIZE = "resize",
   FRAME = "frame",
   EXTERNAL_OUTPUT = "external_output",
+  RAW_MOUSE = "raw_mouse",
   FOCUS = "focus",
   BLUR = "blur",
   FOCUSED_RENDERABLE = "focused_renderable",
@@ -1170,6 +1188,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     process.on("uncaughtException", this.handleError)
     process.on("unhandledRejection", this.handleError)
     process.on("beforeExit", this.exitHandler)
+    // beforeExit does not fire on explicit process.exit(); the exit listener
+    // guarantees terminal state is restored then too. destroy() is
+    // synchronous and idempotent, so double-firing is safe.
+    process.on("exit", this.exitHandler)
 
     const useKittyForParsing = kittyConfig !== null
     this._keyHandler = new InternalKeyHandler()
@@ -3405,6 +3427,13 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   private processSingleMouseEvent(mouseEvent: RawMouseEvent): boolean {
+    if (this.listenerCount(CliRenderEvents.RAW_MOUSE) > 0) {
+      this.emit(CliRenderEvents.RAW_MOUSE, {
+        input: cloneRawMouseEvent(mouseEvent),
+        pendingEvent: mouseEvent,
+      } satisfies CliRendererRawMouseEvent)
+    }
+
     if (this._splitHeight > 0) {
       if (mouseEvent.y < this.renderOffset) {
         return false
@@ -4145,6 +4174,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     process.removeListener("unhandledRejection", this.handleError)
     process.removeListener("warning", this.warningHandler)
     process.removeListener("beforeExit", this.exitHandler)
+    process.removeListener("exit", this.exitHandler)
     this.removeExitListeners()
 
     if (this.resizeTimeoutId !== null) {
