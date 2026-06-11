@@ -17,6 +17,7 @@ env:
 
 jobs:
   build-native:
+    if: github.repository == 'anomalyco/opentui'
     name: Build Native Libraries
     runs-on: blacksmith-12vcpu-macos-15
 

@@ -1,0 +1,523 @@
+name: JITL NPM Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch:
+    inputs:
+      type:
+        description: "Release type"
+        required: true
+        default: "next"
+        type: choice
+        options:
+          - stable
+          - next
+          - branch
+      dryRun:
+        description: "Run npm publish --dry-run instead of publishing"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUN_VERSION: 1.3.14
+  NODE_VERSION: 22
+  ZIG_VERSION: 0.15.2
+  NPM_SCOPE: "@jitl"
+  NPM_PACKAGE_PREFIX: "opentui-"
+
+jobs:
+  build_tarballs:
+    name: Test, build, create tarballs
+    if: >-
+      github.repository == 'justjake/opentui' &&
+      (
+        github.event_name != 'pull_request' ||
+        (
+          github.event.pull_request.user.login == 'justjake' &&
+          github.actor == 'justjake' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.draft == false
+        )
+      )
+    runs-on: macos-latest
+    outputs:
+      mode: ${{ steps.publish_plan.outputs.mode }}
+      version: ${{ steps.publish_plan.outputs.version }}
+      npm_tag: ${{ steps.publish_plan.outputs.npm_tag }}
+      dry_run: ${{ steps.publish_plan.outputs.dry_run }}
+      package_name: ${{ steps.publish_plan.outputs.package_name }}
+      url: ${{ steps.publish_plan.outputs.url }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Plan publish
+        id: publish_plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_TYPE: ${{ inputs.type }}
+          INPUT_DRY_RUN: ${{ inputs.dryRun }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+        run: |
+          set -euo pipefail
+
+          source_version="$(bun -e "console.log(require('./packages/core/package.json').version)")"
+          release_type="${INPUT_RELEASE_TYPE}"
+          package_name="${NPM_SCOPE}/${NPM_PACKAGE_PREFIX}core"
+
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            release_type="branch"
+            source_sha="${PR_HEAD_SHA}"
+          else
+            source_sha="${GITHUB_SHA}"
+          fi
+
+          short_sha="${source_sha:0:7}"
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            dry_run="${INPUT_DRY_RUN}"
+          else
+            dry_run="false"
+          fi
+
+          emit() {
+            {
+              echo "mode=$1"
+              echo "package_name=${package_name}"
+              echo "version=$2"
+              echo "npm_tag=$3"
+              echo "dry_run=${dry_run}"
+              echo "url=https://www.npmjs.com/package/${package_name}/v/$2"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          sanitize_prerelease_part() {
+            bun -e "
+              const value = process.argv[1]
+              const sanitized = value
+                .replace(/[^0-9A-Za-z-]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+              process.stdout.write(sanitized || 'detached')
+            " -- "$1"
+          }
+
+          npm_version_status() {
+            local spec="$1"
+            local output
+            output="$(mktemp)"
+
+            if npm view "${spec}" version --json >"${output}" 2>&1; then
+              rm -f "${output}"
+              echo "exists"
+              return 0
+            fi
+
+            if grep -q "E404" "${output}"; then
+              rm -f "${output}"
+              echo "missing"
+              return 0
+            fi
+
+            cat "${output}" >&2
+            rm -f "${output}"
+            return 1
+          }
+
+          if [ -z "${release_type}" ]; then
+            source_version_status="$(npm_version_status "${package_name}@${source_version}")"
+            if [ "${source_version_status}" = "exists" ]; then
+              release_type="next"
+            else
+              release_type="stable"
+            fi
+          fi
+
+          case "${release_type}" in
+            stable)
+              package_version="${source_version}"
+              npm_tag="latest"
+              ;;
+            next)
+              package_version="${source_version}-next.${short_sha}"
+              npm_tag="next"
+              ;;
+            branch)
+              branch_name="${PR_HEAD_REF:-${GITHUB_REF_NAME:-detached}}"
+              sanitized_branch="$(sanitize_prerelease_part "${branch_name}")"
+              package_version="${source_version}-branch-${sanitized_branch}-${short_sha}"
+              npm_tag="experimental"
+              ;;
+            *)
+              echo "Invalid release type: ${release_type}" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "${dry_run}" = "true" ]; then
+            emit dry-run "${package_version}" "${npm_tag}"
+            exit 0
+          fi
+
+          package_version_status="$(npm_version_status "${package_name}@${package_version}")"
+          if [ "${package_version_status}" = "exists" ]; then
+            emit skip "${package_version}" "${npm_tag}"
+            echo "Version ${package_version} is already published; skipping publish."
+          else
+            emit "${release_type}" "${package_version}" "${npm_tag}"
+            echo "Will publish ${package_name}@${package_version} with dist-tag ${npm_tag}."
+          fi
+
+      - name: Prepare release versions
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: bun scripts/prepare-release.ts "${{ steps.publish_plan.outputs.version }}"
+
+      - name: Clear stale native outputs
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: rm -rf .zig-cache packages/core/src/zig/.zig-cache packages/core/src/zig/lib packages/core/node_modules/@opentui/core-*
+
+      - name: Build package artifacts
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: |
+          set -euo pipefail
+
+          cd packages/core
+          bun run build:native --all
+          bun run build:lib
+
+          cd ../qrcode
+          bun run build
+
+          cd ../solid
+          bun run build
+
+          cd ../react
+          bun run build
+
+          cd ../keymap
+          bun run build
+
+      - name: Typecheck package artifacts
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: bun run typecheck
+
+      - name: Test package artifacts
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: |
+          set -euo pipefail
+
+          cd packages/core
+          bun run test:native
+          bun run test:js
+
+          cd ../qrcode
+          bun run test
+
+          cd ../solid
+          bun run test
+
+          cd ../react
+          bun run test
+
+          cd ../keymap
+          bun run test
+
+          cd ../..
+          bun run test:dist:fixtures
+
+      - name: Create npm tarballs
+        if: steps.publish_plan.outputs.mode != 'skip'
+        run: |
+          set -euo pipefail
+
+          mkdir -p npm-tarballs
+
+          bun scripts/publish-scoped.ts \
+            --scope "$NPM_SCOPE" \
+            --package-prefix "$NPM_PACKAGE_PREFIX" \
+            --tag "${{ steps.publish_plan.outputs.npm_tag }}" \
+            --skip-existing \
+            --pack-destination npm-tarballs \
+            --pack-only
+
+      - name: Upload npm tarballs
+        if: steps.publish_plan.outputs.mode != 'skip'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jitl-npm-tarballs
+          path: npm-tarballs/*
+          if-no-files-found: error
+
+  smoke_tarballs:
+    name: Install tarballs with npm only
+    needs: build_tarballs
+    if: needs.build_tarballs.outputs.mode != 'skip'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Assert Bun is unavailable
+        run: |
+          if command -v bun >/dev/null 2>&1; then
+            echo "This smoke test must run without Bun on PATH."
+            exit 1
+          fi
+
+      - name: Download npm tarballs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: jitl-npm-tarballs
+          path: npm-tarballs
+
+      - name: Install and smoke-test tarballs
+        run: node scripts/smoke-test-tarballs.mjs npm-tarballs --scope "$NPM_SCOPE" --package-prefix "$NPM_PACKAGE_PREFIX"
+
+  publish:
+    name: Publish @jitl packages
+    needs:
+      - build_tarballs
+      - smoke_tarballs
+    if: needs.build_tarballs.outputs.mode != 'skip' && github.repository == 'justjake/opentui'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: npm-publish-${{ github.repository }}-${{ github.ref_name }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    environment: npm-publish
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify npm trusted publishing prerequisites
+        run: |
+          node --version
+          npm --version
+
+      - name: Download npm tarballs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: jitl-npm-tarballs
+          path: npm-tarballs
+
+      - name: Validate scoped tarballs
+        env:
+          EXPECTED_VERSION: ${{ needs.build_tarballs.outputs.version }}
+        run: |
+          node <<'NODE'
+          const { spawnSync } = require("node:child_process")
+          const { existsSync, readFileSync } = require("node:fs")
+          const { basename, join, resolve } = require("node:path")
+
+          const scope = process.env.NPM_SCOPE
+          const packagePrefix = process.env.NPM_PACKAGE_PREFIX
+          const expectedVersion = process.env.EXPECTED_VERSION
+          const tarballDir = resolve("npm-tarballs")
+          const manifestPath = join(tarballDir, "publish-manifest.json")
+
+          if (!existsSync(manifestPath)) {
+            throw new Error(`Missing tarball manifest: ${manifestPath}`)
+          }
+
+          const corePackage = JSON.parse(readFileSync("packages/core/package.json", "utf8"))
+          const expectedNames = new Set([
+            ...Object.keys(corePackage.optionalDependencies ?? {})
+              .filter((name) => name.startsWith("@opentui/core-"))
+              .map((name) => name.replace("@opentui/", `${scope}/${packagePrefix}`)),
+            ...["core", "qrcode", "react", "solid", "keymap"].map(
+              (name) => `${scope}/${packagePrefix}${name}`,
+            ),
+          ])
+
+          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+          if (!Array.isArray(manifest)) {
+            throw new Error("Tarball manifest must be an array")
+          }
+
+          const seenNames = new Set()
+          for (const entry of manifest) {
+            const tarballPath = join(tarballDir, basename(entry.filename ?? ""))
+            if (!existsSync(tarballPath)) {
+              throw new Error(`Missing tarball: ${tarballPath}`)
+            }
+
+            const result = spawnSync("tar", ["-xOf", tarballPath, "package/package.json"], { encoding: "utf8" })
+            if (result.status !== 0) {
+              throw new Error(`Unable to inspect ${tarballPath}:\n${result.stderr}`)
+            }
+
+            const packageJson = JSON.parse(result.stdout)
+            if (!expectedNames.has(packageJson.name)) {
+              throw new Error(`Unexpected package in tarball: ${packageJson.name}`)
+            }
+            if (packageJson.version !== expectedVersion) {
+              throw new Error(`Unexpected version for ${packageJson.name}: ${packageJson.version}`)
+            }
+            if (entry.name !== packageJson.name || entry.version !== packageJson.version) {
+              throw new Error(`Manifest does not match tarball package.json for ${tarballPath}`)
+            }
+
+            seenNames.add(packageJson.name)
+          }
+
+          const missing = [...expectedNames].filter((name) => !seenNames.has(name))
+          if (missing.length > 0) {
+            throw new Error(`Missing expected packages:\n${missing.join("\n")}`)
+          }
+
+          if (seenNames.size !== manifest.length) {
+            throw new Error("Tarball manifest contains duplicate package entries")
+          }
+          NODE
+
+      - name: Verify PR publish is still current
+        id: verify_pr_publish
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_AUTHOR: justjake
+          EXPECTED_HEAD_REPO: ${{ github.repository }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          current_author="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.user.login')"
+          current_head_repo="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.repo.full_name')"
+          current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          current_draft="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.draft')"
+
+          if [ "${current_author}" != "${EXPECTED_AUTHOR}" ]; then
+            echo "Skipping publish: PR author changed to ${current_author}."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${current_head_repo}" != "${EXPECTED_HEAD_REPO}" ]; then
+            echo "Skipping publish: PR head repo changed to ${current_head_repo}."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${current_head_sha}" != "${EXPECTED_HEAD_SHA}" ]; then
+            echo "Skipping publish: PR head is now ${current_head_sha}; this run built ${EXPECTED_HEAD_SHA}."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${current_draft}" = "true" ]; then
+            echo "Skipping publish: PR is now draft."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish scoped tarballs
+        if: github.event_name != 'pull_request' || steps.verify_pr_publish.outputs.should_publish == 'true'
+        run: |
+          set -euo pipefail
+
+          DRY_RUN_ARG=""
+          if [ "${{ needs.build_tarballs.outputs.dry_run }}" = "true" ]; then
+            DRY_RUN_ARG="--dry-run"
+          fi
+
+          node scripts/publish-tarballs.mjs \
+            npm-tarballs \
+            --tag "${{ needs.build_tarballs.outputs.npm_tag }}" \
+            --skip-existing \
+            $DRY_RUN_ARG
+
+      - name: Report publish
+        if: github.event_name != 'pull_request' || steps.verify_pr_publish.outputs.should_publish == 'true'
+        run: |
+          {
+            echo "### Published \`${NPM_SCOPE}/*@${{ needs.build_tarballs.outputs.version }}\`"
+            echo ""
+            echo "- npm tag: \`${{ needs.build_tarballs.outputs.npm_tag }}\`"
+            echo "- dry run: \`${{ needs.build_tarballs.outputs.dry_run }}\`"
+            echo "- core package: ${{ needs.build_tarballs.outputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report skipped stale PR publish
+        if: github.event_name == 'pull_request' && steps.verify_pr_publish.outputs.should_publish != 'true'
+        run: |
+          echo "Skipped publish because the PR is no longer in the validated state." >> "$GITHUB_STEP_SUMMARY"
+
+  report_skip:
+    name: Report skipped publish
+    needs: build_tarballs
+    if: needs.build_tarballs.outputs.mode == 'skip'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report skip
+        run: |
+          echo "Skipped publish; ${{ needs.build_tarballs.outputs.url }} already exists."
+          echo "::notice title=Skipped publish (already on npm)::${{ needs.build_tarballs.outputs.url }}"

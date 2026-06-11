@@ -24,6 +24,7 @@ env:
 
 jobs:
   publish:
+    if: github.repository == 'anomalyco/opentui'
     runs-on: blacksmith-6vcpu-macos-15
 
     steps:

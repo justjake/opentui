@@ -17,6 +17,7 @@
     "build:examples": "bun examples/build.ts",
     "publish": "bun scripts/publish.ts",
     "test:dist": "bun scripts/test-packed-consumer.ts",
+    "test:dist:fixtures": "bun ../../scripts/dist-test.ts ./dist-test/*",
     "test:js:node": "bun scripts/test-node.ts",
     "test": "bun test"
   },

@@ -10,6 +10,7 @@ env:
 jobs:
   opencode:
     if: |
+      github.repository == 'anomalyco/opentui' &&
       contains(fromJson('["OWNER","MEMBER"]'), github.event.comment.author_association) &&
       (contains(github.event.comment.body, ' /oc') ||
         startsWith(github.event.comment.body, '/oc') ||

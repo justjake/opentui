@@ -19,6 +19,7 @@ env:
 
 jobs:
   bun-test:
+    if: github.repository == 'anomalyco/opentui'
     name: Bun Test (${{ matrix.os }})
     strategy:
       matrix:
@@ -66,6 +67,7 @@ jobs:
         run: bun run test
 
   node-source:
+    if: github.repository == 'anomalyco/opentui'
     name: Node Source Lane
     runs-on: blacksmith-8vcpu-ubuntu-2404
     defaults:
@@ -114,6 +116,7 @@ jobs:
         run: bun run test:js:node
 
   packed-consumer:
+    if: github.repository == 'anomalyco/opentui'
     name: Packed Consumer Smoke
     runs-on: blacksmith-8vcpu-ubuntu-2404
     defaults:
@@ -166,7 +169,7 @@ jobs:
     name: Solid - Build and Test
     needs: [bun-test, node-source, packed-consumer]
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: always()
+    if: github.repository == 'anomalyco/opentui' && always()
     steps:
       - name: Check test results
         run: |
