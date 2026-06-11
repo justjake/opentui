@@ -1240,3 +1240,37 @@ test "resetState - skips mouse disable when mouse was never enabled" {
     try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.disableMouseTracking) == null);
     try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.disableSGRMouseMode) == null);
 }
+
+test "resetStateWithOptions - preserve_main_screen skips main screen scrollback cleanup" {
+    var term = Terminal.init(.{});
+    term.state.alt_screen = false;
+    term.state.cursor.row = 4;
+
+    var writer = TestWriter.init(testing.allocator);
+    defer writer.deinit();
+
+    try term.resetStateWithOptions(&writer, .{ .preserve_main_screen = true });
+
+    const output = writer.getWritten();
+    try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.reverseIndex) == null);
+    try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.eraseBelowCursor) == null);
+}
+
+test "resetStateWithOptions - preserve_main_screen still disables input modes" {
+    var term = Terminal.init(.{});
+    term.state.mouse = false;
+    term.state.mouse_movement = false;
+    term.state.mouse_was_enabled = true;
+    term.state.bracketed_paste = true;
+    term.state.focus_tracking = true;
+
+    var writer = TestWriter.init(testing.allocator);
+    defer writer.deinit();
+
+    try term.resetStateWithOptions(&writer, .{ .preserve_main_screen = true });
+
+    const output = writer.getWritten();
+    try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.disableMouseTracking) != null);
+    try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.bracketedPasteReset) != null);
+    try testing.expect(std.mem.indexOf(u8, output, ansi.ANSI.focusReset) != null);
+}

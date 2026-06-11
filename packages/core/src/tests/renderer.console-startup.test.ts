@@ -1220,7 +1220,7 @@ test("CliRenderer clears split footer surface when leaving split-footer mode", a
   lib.setRenderOffset = originalSetRenderOffset
 })
 
-test("CliRenderer destroy flushes split output before clearing split footer surface", async () => {
+test("CliRenderer destroy flushes split output before native shutdown clears the split footer surface", async () => {
   const result = await createTestRenderer({
     width: 40,
     height: 10,
@@ -1236,6 +1236,7 @@ test("CliRenderer destroy flushes split output before clearing split footer surf
   ;(renderer as any).stdout.write("before-destroy\n")
 
   const order: string[] = []
+  let renderOffsetAtDestroy = 0
   const lib = (renderer as any).lib
   const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
   const originalSetRenderOffset = lib.setRenderOffset.bind(lib)
@@ -1253,19 +1254,21 @@ test("CliRenderer destroy flushes split output before clearing split footer surf
   }
   lib.destroyRenderer = (...args: any[]) => {
     order.push("destroy")
+    renderOffsetAtDestroy = (renderer as any).renderOffset
     return originalDestroyRenderer(...args)
   }
 
   renderer.destroy()
 
-  expect(order).toEqual(["split-commit", "clear", "destroy"])
+  expect(order).toEqual(["split-commit", "destroy"])
+  expect(renderOffsetAtDestroy).toBeGreaterThan(0)
 
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   lib.setRenderOffset = originalSetRenderOffset
   lib.destroyRenderer = originalDestroyRenderer
 })
 
-test("CliRenderer destroy flushes writeToScrollback output before clearing split footer surface", async () => {
+test("CliRenderer destroy flushes writeToScrollback output before native shutdown clears the split footer surface", async () => {
   const result = await createTestRenderer({
     width: 40,
     height: 10,
@@ -1280,6 +1283,7 @@ test("CliRenderer destroy flushes writeToScrollback output before clearing split
   renderer.writeToScrollback(textScrollbackWrite("before-destroy\n"))
 
   const order: string[] = []
+  let renderOffsetAtDestroy = 0
   const lib = (renderer as any).lib
   const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
   const originalSetRenderOffset = lib.setRenderOffset.bind(lib)
@@ -1297,16 +1301,46 @@ test("CliRenderer destroy flushes writeToScrollback output before clearing split
   }
   lib.destroyRenderer = (...args: any[]) => {
     order.push("destroy")
+    renderOffsetAtDestroy = (renderer as any).renderOffset
     return originalDestroyRenderer(...args)
   }
 
   renderer.destroy()
 
-  expect(order).toEqual(["split-commit", "clear", "destroy"])
+  expect(order).toEqual(["split-commit", "destroy"])
+  expect(renderOffsetAtDestroy).toBeGreaterThan(0)
 
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   lib.setRenderOffset = originalSetRenderOffset
   lib.destroyRenderer = originalDestroyRenderer
+})
+
+test("CliRenderer destroy does not emit a forced footer blank after split output is already drained", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
+    consoleMode: "disabled",
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+  ;(renderer as any).stdout.write("before-destroy\n")
+
+  await result.renderOnce()
+  expect((renderer as any).externalOutputQueue.size).toBe(0)
+
+  const writeOutSpy = spyOn(renderer as any, "writeOut")
+
+  renderer.destroy()
+
+  const wroteClearToEndOfScreen = writeOutSpy.mock.calls.some(([output]) => String(output).includes("\x1b[J"))
+  expect(wroteClearToEndOfScreen).toBe(false)
+
+  writeOutSpy.mockRestore()
 })
 
 test("CliRenderer destroy does not clear split footer surface when clearOnShutdown is false", async () => {
@@ -1330,6 +1364,7 @@ test("CliRenderer destroy does not clear split footer surface when clearOnShutdo
   const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
   const originalSetRenderOffset = lib.setRenderOffset.bind(lib)
   const originalDestroyRenderer = lib.destroyRenderer.bind(lib)
+  const writeOutSpy = spyOn(renderer as any, "writeOut")
 
   lib.commitSplitFooterSnapshot = (...args: any[]) => {
     order.push("split-commit")
@@ -1349,10 +1384,185 @@ test("CliRenderer destroy does not clear split footer surface when clearOnShutdo
   renderer.destroy()
 
   expect(order).toEqual(["split-commit", "destroy"])
+  const wroteClearToEndOfScreen = writeOutSpy.mock.calls.some(([output]) => String(output).includes("\x1b[J"))
+  expect(wroteClearToEndOfScreen).toBe(false)
 
+  writeOutSpy.mockRestore()
   lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
   lib.setRenderOffset = originalSetRenderOffset
   lib.destroyRenderer = originalDestroyRenderer
+})
+
+test("CliRenderer destroy does not blank split footer with a forced stdout flush when clearOnShutdown is false", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "disabled",
+    clearOnShutdown: false,
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+
+  const writeOutSpy = spyOn(renderer as any, "writeOut")
+
+  renderer.destroy()
+
+  const wroteClearToEndOfScreen = writeOutSpy.mock.calls.some(([output]) => String(output).includes("\x1b[J"))
+  expect(wroteClearToEndOfScreen).toBe(false)
+
+  writeOutSpy.mockRestore()
+})
+
+test("CliRenderer destroy skips pending split footer transitions when clearOnShutdown is false", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
+    consoleMode: "disabled",
+    clearOnShutdown: false,
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+  ;(renderer as any).setPendingSplitFooterTransition({
+    mode: "clear-stale-rows",
+    sourceTopLine: 7,
+    sourceHeight: 4,
+    targetTopLine: 7,
+    targetHeight: 3,
+    scrollLines: 0,
+  })
+  ;(renderer as any).stdout.write("before-destroy\n")
+
+  const order: string[] = []
+  const lib = (renderer as any).lib
+  const originalClearPendingSplitFooterTransition = lib.clearPendingSplitFooterTransition.bind(lib)
+  const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
+  const originalDestroyRenderer = lib.destroyRenderer.bind(lib)
+
+  lib.clearPendingSplitFooterTransition = (...args: any[]) => {
+    order.push("clear-transition")
+    return originalClearPendingSplitFooterTransition(...args)
+  }
+  lib.commitSplitFooterSnapshot = (...args: any[]) => {
+    order.push("split-commit")
+    return originalCommitSplitFooterSnapshot(...args)
+  }
+  lib.destroyRenderer = (...args: any[]) => {
+    order.push("destroy")
+    return originalDestroyRenderer(...args)
+  }
+
+  renderer.destroy()
+
+  expect(order).toEqual(["clear-transition", "split-commit", "destroy"])
+
+  lib.clearPendingSplitFooterTransition = originalClearPendingSplitFooterTransition
+  lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
+  lib.destroyRenderer = originalDestroyRenderer
+})
+
+test("CliRenderer destroy restores the last split footer frame before draining output when clearOnShutdown is false", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
+    consoleMode: "disabled",
+    clearOnShutdown: false,
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+  renderer.root.add(
+    new TextRenderable(renderer, {
+      id: "shutdown-frame-footer",
+      position: "absolute",
+      left: 0,
+      top: 0,
+      width: 6,
+      height: 1,
+      content: "footer",
+    }),
+  )
+
+  await result.renderOnce()
+
+  const renderedFrame = new TextDecoder().decode(renderer.currentRenderBuffer.getRealCharBytes(true))
+  expect(renderedFrame).toContain("footer")
+
+  const clearedNextFrame = new TextDecoder().decode(renderer.nextRenderBuffer.getRealCharBytes(true))
+  expect(clearedNextFrame).not.toContain("footer")
+
+  ;(renderer as any).stdout.write("before-destroy\n")
+
+  let frameAtFinalCommit = ""
+  const lib = (renderer as any).lib
+  const originalCommitSplitFooterSnapshot = lib.commitSplitFooterSnapshot.bind(lib)
+
+  lib.commitSplitFooterSnapshot = (...args: any[]) => {
+    frameAtFinalCommit = new TextDecoder().decode(renderer!.nextRenderBuffer.getRealCharBytes(true))
+    return originalCommitSplitFooterSnapshot(...args)
+  }
+
+  renderer.destroy()
+
+  expect(frameAtFinalCommit).toContain("footer")
+
+  lib.commitSplitFooterSnapshot = originalCommitSplitFooterSnapshot
+})
+
+test("CliRenderer destroy repaints the last split footer frame without pending output when clearOnShutdown is false", async () => {
+  const result = await createTestRenderer({
+    width: 40,
+    height: 10,
+    screenMode: "split-footer",
+    footerHeight: 4,
+    externalOutputMode: "capture-stdout",
+    externalOutputRendering: "emulated",
+    consoleMode: "disabled",
+    clearOnShutdown: false,
+  })
+
+  renderer = result.renderer
+  ;(renderer as any)._terminalIsSetup = true
+  renderer.root.add(
+    new TextRenderable(renderer, {
+      id: "shutdown-frame-footer-no-output",
+      position: "absolute",
+      left: 0,
+      top: 0,
+      width: 6,
+      height: 1,
+      content: "footer",
+    }),
+  )
+
+  await result.renderOnce()
+
+  let frameAtFinalRepaint = ""
+  const lib = (renderer as any).lib
+  const originalRepaintSplitFooter = lib.repaintSplitFooter.bind(lib)
+
+  lib.repaintSplitFooter = (...args: any[]) => {
+    frameAtFinalRepaint = new TextDecoder().decode(renderer!.nextRenderBuffer.getRealCharBytes(true))
+    return originalRepaintSplitFooter(...args)
+  }
+
+  renderer.destroy()
+
+  expect(frameAtFinalRepaint).toContain("footer")
+
+  lib.repaintSplitFooter = originalRepaintSplitFooter
 })
 
 test("CliRenderer split-footer passthrough ignores console capture writes", async () => {

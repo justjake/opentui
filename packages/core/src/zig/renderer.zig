@@ -435,15 +435,75 @@ pub const CliRenderer = struct {
         ansi.ANSI.moveToOutput(writer, 1, footer_top_line) catch {};
     }
 
+    /// Shutdown path for split-footer mode: instead of erasing the visible
+    /// pane in place, clear only the footer surface and then scroll the whole
+    /// visible pane up into the terminal's scrollback history, so everything
+    /// the app printed above the footer survives after exit.
+    pub fn scrollSplitFooterSurfaceOffscreen(self: *CliRenderer, writer: anytype) void {
+        if (self.renderOffset == 0) return;
+
+        const terminal_height = self.renderOffset + self.height;
+
+        self.clearSplitFooterSurface(writer);
+
+        var row: u32 = 0;
+        while (row < terminal_height) : (row += 1) {
+            writer.writeAll("\r\n") catch {};
+        }
+
+        ansi.ANSI.moveToOutput(writer, 1, 1) catch {};
+    }
+
+    /// Buffers shutdown bytes in a caller-provided stack buffer and drains
+    /// through backend.writeOut whenever it fills. The scroll-offscreen path
+    /// emits two bytes of CRLF per visible terminal row, which can exceed a
+    /// fixed stack buffer on tall terminals; chunking avoids the silent
+    /// truncation a fixedBufferStream + `catch {}` would produce.
+    const ShutdownChunkedWriter = struct {
+        backend: *OutputBackend,
+        buf: []u8,
+        end: usize = 0,
+
+        const Error = error{};
+        const Writer = std.io.GenericWriter(*ShutdownChunkedWriter, Error, writeFn);
+
+        fn writeFn(self: *ShutdownChunkedWriter, bytes: []const u8) Error!usize {
+            var remaining = bytes;
+            while (remaining.len > 0) {
+                if (self.end == self.buf.len) self.flush();
+                const n = @min(self.buf.len - self.end, remaining.len);
+                @memcpy(self.buf[self.end .. self.end + n], remaining[0..n]);
+                self.end += n;
+                remaining = remaining[n..];
+            }
+            return bytes.len;
+        }
+
+        fn flush(self: *ShutdownChunkedWriter) void {
+            if (self.end == 0) return;
+            self.backend.writeOut(self.buf[0..self.end]);
+            self.end = 0;
+        }
+
+        fn writer(self: *ShutdownChunkedWriter) Writer {
+            return .{ .context = self };
+        }
+    };
+
     pub fn performShutdownSequence(self: *CliRenderer) void {
         if (!self.terminalSetup) return;
 
         // Build the shutdown ANSI sequence into a stack buffer, then emit.
+        // Writes go through a chunked writer that drains to backend.writeOut
+        // when the buffer fills, so sequences larger than the buffer (e.g.
+        // scrollSplitFooterSurfaceOffscreen on tall terminals) are emitted
+        // in full instead of being silently truncated.
         var shutdownBuf: [4096]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&shutdownBuf);
-        const writer = stream.writer();
+        var chunked = ShutdownChunkedWriter{ .backend = &self.backend, .buf = &shutdownBuf };
+        const writer = chunked.writer();
 
-        self.terminal.resetState(writer) catch {
+        const preserve_main_screen = !self.clearOnShutdown and !self.useAlternateScreen;
+        self.terminal.resetStateWithOptions(writer, .{ .preserve_main_screen = preserve_main_screen }) catch {
             logger.warn("Failed to reset terminal state", .{});
         };
 
@@ -452,7 +512,9 @@ pub const CliRenderer = struct {
         } else if (self.clearOnShutdown and self.renderOffset == 0) {
             writer.writeAll("\x1b[H\x1b[J") catch {};
         } else if (self.clearOnShutdown and self.renderOffset > 0) {
-            self.clearSplitFooterSurface(writer);
+            // Even when clearing, push the visible pane into scrollback
+            // instead of erasing it in place.
+            self.scrollSplitFooterSurfaceOffscreen(writer);
         }
 
         // NOTE: This messes up state after shutdown, but might be necessary for windows?
@@ -463,7 +525,7 @@ pub const CliRenderer = struct {
         writer.writeAll(ansi.ANSI.defaultCursorStyle) catch {};
         writer.writeAll(ansi.ANSI.showCursor) catch {};
 
-        self.backend.writeOut(stream.getWritten());
+        chunked.flush();
 
         // Workaround for Ghostty not showing the cursor after shutdown for some reason.
         // Keep this backend-agnostic: the active output transport owns delivery.
