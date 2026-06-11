@@ -3,7 +3,7 @@ import { OptimizedBuffer } from "../buffer.js"
 import type { RenderContext, LineInfoProvider } from "../types.js"
 import { RGBA, parseColor } from "../lib/RGBA.js"
 import { stringWidth } from "../platform/runtime.js"
-import { MeasureMode } from "yoga-layout"
+import { MeasureMode } from "../lib/yoga-sync.js"
 
 export interface LineSign {
   before?: string

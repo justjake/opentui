@@ -430,14 +430,18 @@ if (buildLib) {
     "runtimeModuleIdForSpecifier",
   ])
 
-  // Configure exports for multiple entry points
+  // Configure exports for multiple entry points. The fork removes all
+  // top-level await from these entry modules, so Node CommonJS consumers can
+  // require() them (Node >= 22.12 require(esm)).
   const exports = {
     ".": {
       import: "./index.js",
+      require: "./index.js",
       types: "./index.d.ts",
     },
     "./testing": {
       import: "./testing.js",
+      require: "./testing.js",
       types: "./testing.d.ts",
     },
     "./runtime-plugin": {
