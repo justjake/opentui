@@ -1,9 +1,9 @@
-import { MeasureMode } from "@opentui/core/yoga"
 import {
   OptimizedBuffer,
   parseColor,
   RGBA,
   Renderable,
+  Yoga,
   type ColorInput,
   type RenderableOptions,
   type RenderContext,
@@ -349,10 +349,10 @@ abstract class BaseQRCodeRenderable<
     })
   }
 
-  private resolveMeasuredScale(width: number, widthMode: MeasureMode, height: number, heightMode: MeasureMode): number {
-    const availableWidth = widthMode === MeasureMode.Undefined || Number.isNaN(width) ? undefined : Math.floor(width)
+  private resolveMeasuredScale(width: number, widthMode: Yoga.MeasureMode, height: number, heightMode: Yoga.MeasureMode): number {
+    const availableWidth = widthMode === Yoga.MeasureMode.Undefined || Number.isNaN(width) ? undefined : Math.floor(width)
     const availableHeight =
-      heightMode === MeasureMode.Undefined || Number.isNaN(height) ? undefined : Math.floor(height)
+      heightMode === Yoga.MeasureMode.Undefined || Number.isNaN(height) ? undefined : Math.floor(height)
     return this.resolveScaleForBounds(availableWidth, availableHeight)
   }
 
@@ -454,8 +454,8 @@ function getBlockCharacter(top: boolean, bottom: boolean): string {
   return "▄"
 }
 
-function getFallbackWidth(content: string, width: number, widthMode: MeasureMode): number {
-  if (widthMode === MeasureMode.Undefined || Number.isNaN(width)) {
+function getFallbackWidth(content: string, width: number, widthMode: Yoga.MeasureMode): number {
+  if (widthMode === Yoga.MeasureMode.Undefined || Number.isNaN(width)) {
     return content.length
   }
 

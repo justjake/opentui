@@ -9,6 +9,8 @@ import {
 } from "./platform/ffi.js"
 import { writeFile } from "./platform/runtime.js"
 import { existsSync, writeFileSync } from "fs"
+import { dirname, join } from "path"
+import { fileURLToPath } from "url"
 import { EventEmitter } from "events"
 import {
   type CursorStyle,
@@ -77,48 +79,28 @@ function validateLinuxLibcOverride(): void {
   throw new Error(`On Linux, OPENTUI_LIBC must be unset, empty, "glibc", or "musl", got "${libc}"`)
 }
 
-async function resolveNativePackage() {
-  if (process.platform === "darwin") {
-    // @ts-ignore Optional native package may be absent when building on another platform.
-    if (process.arch === "x64") return await import("@opentui/core-darwin-x64")
-    // @ts-ignore Optional native package may be absent when building on another platform.
-    if (process.arch === "arm64") return await import("@opentui/core-darwin-arm64")
+// Resolve the prebuilt native package without evaluating its entry module.
+// The entry (index.js / index.bun.js) lives next to the shared library, so
+// resolving the package and joining the platform's library filename avoids
+// the entry's top-level await and keeps this module require()-able.
+function resolveNativeLibraryPath(): string {
+  if (process.platform === "linux") validateLinuxLibcOverride()
+  const libcSuffix = process.platform === "linux" && process.env.OPENTUI_LIBC === "musl" ? "-musl" : ""
+  const nativePackageName = `@opentui/core-${process.platform}-${process.arch}${libcSuffix}`
+  const nativeLibraryFileName =
+    process.platform === "darwin" ? "libopentui.dylib" : process.platform === "win32" ? "opentui.dll" : "libopentui.so"
+
+  let nativePackageEntryPath: string
+  try {
+    nativePackageEntryPath = fileURLToPath(import.meta.resolve(nativePackageName))
+  } catch (error) {
+    throw new Error(`opentui is not supported on the current platform: ${process.platform}-${process.arch}`, {
+      cause: error,
+    })
   }
 
-  if (process.platform === "linux") {
-    validateLinuxLibcOverride()
-
-    if (process.arch === "x64") {
-      if (process.env.OPENTUI_LIBC === "musl") {
-        // @ts-ignore Optional native package may be absent unless building a musl target.
-        return await import("@opentui/core-linux-x64-musl")
-      } else {
-        // @ts-ignore Optional native package may be absent when building on another platform.
-        return await import("@opentui/core-linux-x64")
-      }
-    }
-
-    if (process.arch === "arm64") {
-      if (process.env.OPENTUI_LIBC === "musl") {
-        // @ts-ignore Optional native package may be absent unless building a musl target.
-        return await import("@opentui/core-linux-arm64-musl")
-      } else {
-        // @ts-ignore Optional native package may be absent when building on another platform.
-        return await import("@opentui/core-linux-arm64")
-      }
-    }
-  }
-
-  if (process.platform === "win32") {
-    // @ts-ignore Optional native package may be absent when building on another platform.
-    if (process.arch === "x64") return await import("@opentui/core-win32-x64")
-    // @ts-ignore Optional native package may be absent when building on another platform.
-    if (process.arch === "arm64") return await import("@opentui/core-win32-arm64")
-  }
-
-  throw new Error(`opentui is not supported on the current platform: ${process.platform}-${process.arch}`)
+  return join(dirname(nativePackageEntryPath), nativeLibraryFileName)
 }
-const nativePackage = await resolveNativePackage()
 
 export type NativeHandle<T extends string> = Pointer & { readonly __nativeHandle: T }
 export type RendererHandle = NativeHandle<"renderer">
@@ -130,7 +112,7 @@ export type EditorViewHandle = NativeHandle<"editor_view">
 export type SyntaxStyleHandle = NativeHandle<"syntax_style">
 export type EventSinkHandle = NativeHandle<"event_sink">
 export type AudioEngineHandle = NativeHandle<"audio_engine">
-let targetLibPath = nativePackage.default
+let targetLibPath = resolveNativeLibraryPath()
 
 if (isBunfsPath(targetLibPath)) {
   targetLibPath = targetLibPath.replace("../", "")

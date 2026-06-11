@@ -179,13 +179,20 @@ console.log("Node dist smoke test passed")
     join(nodeDir, "require.cjs"),
     `const assert = require("node:assert/strict")
 
-for (const specifier of [${JSON.stringify(packageJson.name)}, ${JSON.stringify(`${packageJson.name}/testing`)}, ${JSON.stringify(`${packageJson.name}/tree-sitter/update-assets`)}]) {
-  assert.throws(
-    () => require(specifier),
-    (error) => error?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED",
-    \`Expected \${specifier} to remain import-only in Node\`,
-  )
-}
+// The fork ships these entrypoints without top-level await, so Node CommonJS
+// consumers can require() them directly (Node >= 22.12 require(esm)).
+const core = require(${JSON.stringify(packageJson.name)})
+assert.equal(typeof core.createCliRenderer, "function", "require(core) should expose createCliRenderer")
+
+const testing = require(${JSON.stringify(`${packageJson.name}/testing`)})
+assert.equal(typeof testing.createTestRenderer, "function", "require(core/testing) should expose createTestRenderer")
+
+// update-assets stays import/bun-only: it still uses top-level await.
+assert.throws(
+  () => require(${JSON.stringify(`${packageJson.name}/tree-sitter/update-assets`)}),
+  (error) => error?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED",
+  \`Expected ${`${packageJson.name}/tree-sitter/update-assets`} to remain import-only in Node\`,
+)
 
 const workerPath = require.resolve(${JSON.stringify(`${packageJson.name}/parser.worker`)})
 assert.match(workerPath, /parser\\.worker\\.js$/)
