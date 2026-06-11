@@ -23,6 +23,7 @@ import {
   type FFICallbackInstance,
   type Pointer,
 } from "./ffi.js"
+import { createNode22Backend } from "./node22-ffi.js"
 
 const IS_BUN = typeof process.versions?.bun === "string"
 
@@ -157,6 +158,71 @@ function createMockNodeBackend(options: MockNodeBackendOptions = {}) {
     symbolDefinitions,
     toArrayBufferCalls,
   }
+}
+
+function createMockNode22Backend() {
+  const functionCalls: Array<{ name: string; args: unknown[] }> = []
+  const functionDefinitions: Array<{ name: string; returns: unknown; args: unknown[] }> = []
+  const pointerExternal = { __koffi_external__: true as const }
+
+  const backend = createNode22Backend({
+    koffi: {
+      address(pointer) {
+        return pointer === pointerExternal ? 321n : 0n
+      },
+      extension: ".dylib",
+      load() {
+        return {
+          func(name, returns, args) {
+            functionDefinitions.push({ name, returns, args })
+            return (...callArgs: unknown[]) => {
+              functionCalls.push({ name, args: callArgs })
+              return pointerExternal
+            }
+          },
+          unload() {},
+        }
+      },
+      opaque(name?: string) {
+        return `opaque:${name ?? ""}`
+      },
+      pointer(nameOrType: string | unknown, type?: unknown) {
+        return type == null ? `pointer:${String(nameOrType)}` : `pointer:${String(nameOrType)}:${String(type)}`
+      },
+      proto(returns, args) {
+        return { args, returns }
+      },
+      register() {
+        return pointerExternal
+      },
+      types: {
+        bool: "bool",
+        char: "char",
+        double: "double",
+        float: "float",
+        int16_t: "int16_t",
+        int32_t: "int32_t",
+        int64_t: "int64_t",
+        int8_t: "int8_t",
+        uint16_t: "uint16_t",
+        uint32_t: "uint32_t",
+        uint64_t: "uint64_t",
+        uint8_t: "uint8_t",
+        void: "void",
+      },
+      unregister() {},
+    },
+    unsafeArrayBufferAt(pointer, offset = 0, length) {
+      expect(pointer).toBe(321 as Pointer)
+      expect(offset).toBe(4)
+      return new ArrayBuffer(length)
+    },
+    unsafePointerOf() {
+      return 317 as Pointer
+    },
+  })
+
+  return { backend, functionCalls, functionDefinitions }
 }
 
 describe("platform/ffi", () => {
@@ -428,6 +494,30 @@ describe("platform/ffi", () => {
     expect(() => backend.toArrayBuffer(2000n as Pointer, -1, 1)).toThrow(POINTER_OFFSET_NEGATIVE)
     expect(() => backend.toArrayBuffer(2000n as Pointer, 1.5, 1)).toThrow(POINTER_OFFSET_UNSAFE)
     expect(() => backend.toArrayBuffer(2000n as Pointer, Number.MAX_SAFE_INTEGER + 1, 1)).toThrow(POINTER_OFFSET_UNSAFE)
+  })
+
+  test("adapts Node 22 koffi booleans and pointers to Bun-compatible FFI calls", () => {
+    const { backend, functionCalls, functionDefinitions } = createMockNode22Backend()
+    const library = backend.dlopen("mock", {
+      mixed: {
+        args: ["bool", "ptr", "u64"],
+        returns: "ptr",
+      },
+    })
+
+    const result = library.symbols.mixed(ffiBool(true), 123 as Pointer, 7n)
+
+    expect(result).toBe(321 as Pointer)
+    expect(functionDefinitions).toEqual([
+      {
+        name: "mixed",
+        returns: "pointer:BunPtr:opaque:",
+        args: ["bool", "pointer:BunPtr:opaque:", "uint64_t"],
+      },
+    ])
+    expect(functionCalls).toEqual([{ name: "mixed", args: [true, 123n, 7n] }])
+    expect(backend.ptr(new Uint8Array(new ArrayBuffer(8), 4))).toBe(321 as Pointer)
+    expect(backend.toArrayBuffer(321 as Pointer, 4, 8).byteLength).toBe(8)
   })
 
   test("passes dlopen(null) to Node and rejects it in Bun", () => {
