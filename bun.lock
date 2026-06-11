@@ -121,7 +121,7 @@
       "version": "0.4.1",
       "dependencies": {
         "@opentui/core": "workspace:*",
-        "react-reconciler": "^0.33.0",
+        "react-reconciler": "^0.29.0 || ^0.33.0",
       },
       "devDependencies": {
         "@opentui/keymap": "workspace:*",
@@ -130,13 +130,13 @@
         "@types/react": "^19.2.0",
         "@types/react-reconciler": "^0.33.0",
         "@types/ws": "^8.18.1",
-        "react": ">=19.2.0",
+        "react": "^18.2.0 || >=19.2.0",
         "react-devtools-core": "^7.0.1",
         "typescript": "^5",
         "ws": "^8.18.0",
       },
       "peerDependencies": {
-        "react": ">=19.2.0",
+        "react": "^18.2.0 || >=19.2.0",
         "react-devtools-core": "^7.0.1",
         "ws": "^8.18.0",
       },

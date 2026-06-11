@@ -1,14 +1,18 @@
+import { createRequire } from "node:module"
+
 // Polyfills required for react-devtools-core in Node.js/Bun environments
 // This file MUST be imported before react-devtools-core
 
 const g = globalThis as any
 
+const require = createRequire(import.meta.url)
+
 // Only polyfill WebSocket if not natively available (Node.js < 21)
 // Bun and Node.js 21+ should have native WebSocket support
 if (typeof g.WebSocket === "undefined") {
   try {
-    const ws = await import("ws")
-    g.WebSocket = ws.default
+    const ws = require("ws") as { default?: unknown; WebSocket?: unknown }
+    g.WebSocket = ws.default ?? ws.WebSocket ?? ws
   } catch {
     // ws not installed - will fail later if DevTools actually needs it
   }

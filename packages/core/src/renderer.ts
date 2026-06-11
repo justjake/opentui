@@ -1281,6 +1281,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return this._isDestroyed
   }
 
+  public get clearOnShutdownEnabled(): boolean {
+    return this.clearOnShutdown
+  }
+
   public registerLifecyclePass(renderable: Renderable) {
     this.lifecyclePasses.add(renderable)
   }
