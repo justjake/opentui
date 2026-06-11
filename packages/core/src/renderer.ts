@@ -4521,16 +4521,41 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this.flushPendingSplitOutputBeforeTransition(false, { allowSuspended: true, allowUnsetup: true })
     }
 
-    this.externalOutputMode = "passthrough"
+    // When clearOnShutdown is false, keep capturing until finalizeDestroy so
+    // the footer app is not blanked: switching to passthrough (or forcing a
+    // stdout cache flush) would clear the renderer-owned footer rows.
+    if (this.clearOnShutdown) {
+      this.externalOutputMode = "passthrough"
+    }
 
-    if (this._splitHeight > 0) {
-      this.flushStdoutCache(this._splitHeight, true)
+    if (this._splitHeight > 0 && this.clearOnShutdown) {
+      this.flushStdoutCache(this._splitHeight)
     }
   }
 
   private prepareDestroyDuringRender(): void {
     this.cleanupBeforeDestroy()
     this.lib.suspendRenderer(this.rendererPtr)
+  }
+
+  private captureShutdownFrameSnapshot(): OptimizedBuffer | null {
+    if (this.clearOnShutdown || this._splitHeight <= 0 || !this._terminalIsSetup) {
+      return null
+    }
+
+    const snapshot = OptimizedBuffer.create(this.width, this.height, this.widthMethod, {
+      id: "shutdown-frame-snapshot",
+    })
+    snapshot.drawFrameBuffer(0, 0, this.currentRenderBuffer)
+    return snapshot
+  }
+
+  private restoreShutdownFrameSnapshot(snapshot: OptimizedBuffer | null): void {
+    if (snapshot === null) {
+      return
+    }
+
+    this.nextRenderBuffer.drawFrameBuffer(0, 0, snapshot)
   }
 
   private finalizeDestroy(): void {
@@ -4540,6 +4565,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._destroyPending = false
 
     this.cleanupBeforeDestroy()
+    // Capture the last rendered frame before renderables are destroyed so a
+    // clearOnShutdown=false shutdown can leave it on screen.
+    const shutdownFrameSnapshot = this.captureShutdownFrameSnapshot()
 
     // Clean up palette detector
     if (this._paletteDetector) {
@@ -4569,18 +4597,27 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.oscSubscribers.clear()
     this._console.destroy()
 
-    // Split-footer cleanup: flush pending output and reset offset before
-    // tearing down the native renderer.
-    if (
-      this._splitHeight > 0 &&
-      this._terminalIsSetup &&
-      this._controlState !== RendererControlState.EXPLICIT_SUSPENDED
-    ) {
-      this.flushPendingSplitOutputBeforeTransition(true)
-      this.renderOffset = 0
-      if (this.clearOnShutdown) {
-        this.lib.setRenderOffset(this.rendererPtr, 0)
+    // Split-footer cleanup: flush pending output before tearing down the
+    // native renderer. renderOffset deliberately survives so the native
+    // shutdown sequence (performShutdownSequence) can scroll the visible
+    // pane into terminal scrollback instead of erasing it in place. When
+    // clearOnShutdown is false, the last rendered frame is restored into
+    // the next render buffer so the final forced repaint leaves it visible
+    // after exit.
+    try {
+      if (
+        this._splitHeight > 0 &&
+        this._terminalIsSetup &&
+        this._controlState !== RendererControlState.EXPLICIT_SUSPENDED
+      ) {
+        if (!this.clearOnShutdown) {
+          this.clearPendingSplitFooterTransition()
+          this.restoreShutdownFrameSnapshot(shutdownFrameSnapshot)
+        }
+        this.flushPendingSplitOutputBeforeTransition(this.clearOnShutdown || shutdownFrameSnapshot !== null)
       }
+    } finally {
+      shutdownFrameSnapshot?.destroy()
     }
 
     this._externalOutputMode = "passthrough"

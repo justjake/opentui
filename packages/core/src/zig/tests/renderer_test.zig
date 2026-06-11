@@ -2332,3 +2332,54 @@ test "threaded buffered destroy: no stale write after shutdown ANSI" {
     // The protocol invariant we assert: setUseThread toggles do not panic
     // or deadlock, and internal state is clean for destroy() to run.
 }
+
+test "renderer - split footer shutdown scrolls visible pane offscreen without home clear" {
+    const pool = gp.initGlobalPool(std.testing.allocator);
+    defer gp.deinitGlobalPool();
+    var local_link_pool = link.LinkPool.init(std.testing.allocator);
+    defer local_link_pool.deinit();
+
+    var test_cli_renderer = try TestRenderer.create(std.testing.allocator, 20, 3, pool);
+    defer test_cli_renderer.deinit();
+    const cli_renderer = test_cli_renderer.renderer;
+
+    cli_renderer.renderOffset = 5;
+
+    var output_buffer: [512]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&output_buffer);
+    cli_renderer.scrollSplitFooterSurfaceOffscreen(stream.writer());
+
+    const output = stream.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[H\x1b[J") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[6;1H\x1b[J\x1b[6;1H") != null);
+    try std.testing.expect(std.mem.endsWith(u8, output, "\x1b[1;1H"));
+    try std.testing.expectEqual(@as(usize, 8), std.mem.count(u8, output, "\r\n"));
+}
+
+test "renderer - shutdown sequence chunks scroll-offscreen output beyond the stack buffer" {
+    const pool = gp.initGlobalPool(std.testing.allocator);
+    defer gp.deinitGlobalPool();
+    var local_link_pool = link.LinkPool.init(std.testing.allocator);
+    defer local_link_pool.deinit();
+
+    var test_cli_renderer = try TestRenderer.create(std.testing.allocator, 20, 24, pool);
+    defer test_cli_renderer.deinit();
+    const cli_renderer = test_cli_renderer.renderer;
+
+    // Tall enough that the CRLF run alone (2 * (renderOffset + height) bytes)
+    // exceeds the 4096-byte shutdown stack buffer; the chunked writer must
+    // drain through backend.writeOut instead of silently truncating.
+    cli_renderer.terminalSetup = true;
+    cli_renderer.useAlternateScreen = false;
+    cli_renderer.clearOnShutdown = true;
+    cli_renderer.renderOffset = 3000;
+
+    cli_renderer.performShutdownSequence();
+    cli_renderer.terminalSetup = false;
+
+    const output = test_cli_renderer.memory.bytes.items;
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[H\x1b[J") == null);
+    try std.testing.expectEqual(@as(usize, 3024), std.mem.count(u8, output, "\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[1;1H") != null);
+    try std.testing.expect(std.mem.endsWith(u8, output, ansi.ANSI.showCursor));
+}

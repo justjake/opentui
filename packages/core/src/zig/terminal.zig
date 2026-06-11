@@ -205,7 +205,15 @@ pub fn setHostEnvVar(self: *Terminal, allocator: std.mem.Allocator, key: []const
     self.checkEnvironmentOverrides();
 }
 
+pub const ResetStateOptions = struct {
+    preserve_main_screen: bool = false,
+};
+
 pub fn resetState(self: *Terminal, tty: anytype) !void {
+    try self.resetStateWithOptions(tty, .{});
+}
+
+pub fn resetStateWithOptions(self: *Terminal, tty: anytype, options: ResetStateOptions) !void {
     try tty.writeAll(ansi.ANSI.showCursor);
     try tty.writeAll(ansi.ANSI.reset);
     try tty.writeAll(ansi.ANSI.resetMousePointer);
@@ -233,7 +241,7 @@ pub fn resetState(self: *Terminal, tty: anytype) !void {
 
     if (self.state.alt_screen) {
         try self.exitAltScreen(tty);
-    } else {
+    } else if (!options.preserve_main_screen) {
         switch (builtin.os.tag) {
             .windows => {
                 try tty.writeByte('\r');
