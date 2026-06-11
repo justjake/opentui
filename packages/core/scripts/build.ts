@@ -30,6 +30,7 @@ interface PackageJson {
   devDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
+  engines?: Record<string, string>
 }
 
 interface BunBuildOptions {
@@ -509,6 +510,7 @@ if (buildLib) {
           ...packageJson.optionalDependencies,
           ...optionalDeps,
         },
+        engines: packageJson.engines,
       },
       null,
       2,
