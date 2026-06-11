@@ -1,6 +1,14 @@
 import { createTestRenderer, type TestRendererOptions } from "@opentui/core/testing"
-import { act, type ReactNode } from "react"
+import React, { type ReactNode } from "react"
 import { createRoot, type Root } from "./reconciler/renderer.js"
+
+type Act = (callback: () => void) => void
+const reactAct =
+  (React as typeof React & { act?: Act; unstable_act?: Act }).act ??
+  (React as typeof React & { act?: Act; unstable_act?: Act }).unstable_act
+if (!reactAct) {
+  throw new Error("@opentui/react/test-utils requires React.act or React.unstable_act")
+}
 
 function setIsReactActEnvironment(isReactActEnvironment: boolean) {
   // @ts-expect-error - this is a test environment
@@ -14,7 +22,7 @@ export async function testRender(node: ReactNode, testRendererOptions: TestRende
   const testSetup = await createTestRenderer({
     ...testRendererOptions,
     onDestroy() {
-      act(() => {
+      reactAct(() => {
         if (root) {
           root.unmount()
           root = null
@@ -26,7 +34,7 @@ export async function testRender(node: ReactNode, testRendererOptions: TestRende
   })
 
   root = createRoot(testSetup.renderer)
-  act(() => {
+  reactAct(() => {
     if (root) {
       root.render(node)
     }

@@ -1,16 +1,21 @@
+import { createRequire } from "node:module"
 import type { RootRenderable } from "@opentui/core"
 import React from "react"
 import ReactReconciler from "react-reconciler"
-import { ConcurrentRoot } from "react-reconciler/constants"
+import { ConcurrentRoot } from "./constants.js"
 import { hostConfig } from "./host-config.js"
+
+const require = createRequire(import.meta.url)
 
 export const reconciler = ReactReconciler(hostConfig)
 
 if (process.env["DEV"] === "true") {
   try {
-    await import("./devtools.js")
+    require("./devtools.js")
   } catch (error: any) {
-    if (error.code === "ERR_MODULE_NOT_FOUND") {
+    // Bun's require throws ERR_MODULE_NOT_FOUND; Node's CommonJS require
+    // throws MODULE_NOT_FOUND.
+    if (error.code === "ERR_MODULE_NOT_FOUND" || error.code === "MODULE_NOT_FOUND") {
       console.warn(
         `
 The environment variable DEV is set to true, so opentui tried to import \`react-devtools-core\`,
@@ -28,8 +33,11 @@ $ bun add react-devtools-core@7 -d
 }
 
 // Inject into DevTools - this is safe to call even if devtools isn't connected
-// @ts-expect-error the types for `react-reconciler` are not up to date with the library.
-reconciler.injectIntoDevTools()
+reconciler.injectIntoDevTools({
+  bundleType: process.env["NODE_ENV"] === "production" ? 0 : 1,
+  version: React.version,
+  rendererPackageName: "@opentui/react",
+})
 
 export function _render(element: React.ReactNode, root: RootRenderable) {
   const container = reconciler.createContainer(
