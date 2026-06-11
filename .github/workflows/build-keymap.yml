@@ -19,6 +19,7 @@ env:
 
 jobs:
   test:
+    if: github.repository == 'anomalyco/opentui'
     name: Test (${{ matrix.os }})
     strategy:
       matrix:
@@ -69,6 +70,7 @@ jobs:
           bun run test
 
   packed-consumer:
+    if: github.repository == 'anomalyco/opentui'
     name: Packed Consumer Smoke
     runs-on: blacksmith-8vcpu-ubuntu-2404
     defaults:
@@ -123,7 +125,7 @@ jobs:
     name: Keymap - Build and Test
     needs: [test, packed-consumer]
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: always()
+    if: github.repository == 'anomalyco/opentui' && always()
     steps:
       - name: Check test results
         run: |

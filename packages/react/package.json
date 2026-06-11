@@ -43,7 +43,8 @@
     "build:examples": "bun examples/build.ts",
     "build:dev": "bun run scripts/build.ts --dev",
     "publish": "bun run scripts/publish.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "test:dist:fixtures": "bun ../../scripts/dist-test.ts ./dist-test/*"
   },
   "devDependencies": {
     "@opentui/keymap": "workspace:*",

@@ -349,8 +349,14 @@ abstract class BaseQRCodeRenderable<
     })
   }
 
-  private resolveMeasuredScale(width: number, widthMode: Yoga.MeasureMode, height: number, heightMode: Yoga.MeasureMode): number {
-    const availableWidth = widthMode === Yoga.MeasureMode.Undefined || Number.isNaN(width) ? undefined : Math.floor(width)
+  private resolveMeasuredScale(
+    width: number,
+    widthMode: Yoga.MeasureMode,
+    height: number,
+    heightMode: Yoga.MeasureMode,
+  ): number {
+    const availableWidth =
+      widthMode === Yoga.MeasureMode.Undefined || Number.isNaN(width) ? undefined : Math.floor(width)
     const availableHeight =
       heightMode === Yoga.MeasureMode.Undefined || Number.isNaN(height) ? undefined : Math.floor(height)
     return this.resolveScaleForBounds(availableWidth, availableHeight)

@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   fmt:
+    if: github.repository == 'anomalyco/opentui'
     name: Format Check
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
@@ -39,6 +40,7 @@ jobs:
           git diff --color=always
 
   lint:
+    if: github.repository == 'anomalyco/opentui'
     name: Lint Check
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
@@ -61,7 +63,7 @@ jobs:
     name: Format and Lint
     needs: [fmt, lint]
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: always()
+    if: github.repository == 'anomalyco/opentui' && always()
 
     steps:
       - name: Check results

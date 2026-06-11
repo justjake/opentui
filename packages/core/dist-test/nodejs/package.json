@@ -1,0 +1,15 @@
+{
+  "name": "@opentui/core-dist-test-nodejs",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test index.js"
+  },
+  "dependencies": {
+    "@opentui/core": "*",
+    "web-tree-sitter": "0.25.10"
+  }
+}

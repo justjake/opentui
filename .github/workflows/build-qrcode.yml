@@ -21,6 +21,7 @@ env:
 
 jobs:
   test:
+    if: github.repository == 'anomalyco/opentui'
     name: Test (${{ matrix.os }})
     strategy:
       matrix:
@@ -74,7 +75,7 @@ jobs:
     name: QRCode - Build and Test
     needs: [test]
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: always()
+    if: github.repository == 'anomalyco/opentui' && always()
     steps:
       - name: Check test results
         run: |

@@ -14,6 +14,7 @@ env:
 jobs:
   # Extract version and check if it's a dry run
   prepare:
+    if: github.repository == 'anomalyco/opentui'
     name: Prepare Release
     runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
@@ -55,6 +56,7 @@ jobs:
 
   # Version validation check
   validate-version:
+    if: github.repository == 'anomalyco/opentui'
     name: Validate Version
     needs: prepare
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -103,6 +105,7 @@ jobs:
 
   # Build native libraries and packages
   build-native:
+    if: github.repository == 'anomalyco/opentui'
     name: Build Native
     needs: [prepare, validate-version]
     uses: ./.github/workflows/build-native.yml
@@ -111,6 +114,7 @@ jobs:
 
   # Build example executables
   build-examples:
+    if: github.repository == 'anomalyco/opentui'
     name: Build Examples
     needs: [prepare, sign-windows-artifacts]
     uses: ./.github/workflows/build-examples.yml
@@ -119,6 +123,7 @@ jobs:
 
   # Publish to npm
   npm-publish:
+    if: github.repository == 'anomalyco/opentui'
     name: NPM Publish
     needs: [prepare, sign-windows-artifacts]
     uses: ./.github/workflows/npm-latest-release.yml
@@ -129,6 +134,7 @@ jobs:
       isDryRun: ${{ needs.prepare.outputs.isDryRun == 'true' }}
 
   sign-windows-artifacts:
+    if: github.repository == 'anomalyco/opentui'
     name: Sign Windows DLL Artifacts
     needs: [prepare, build-native]
     runs-on: blacksmith-8vcpu-windows-2025
@@ -289,6 +295,7 @@ jobs:
 
   # Create GitHub release with assets
   github-release:
+    if: github.repository == 'anomalyco/opentui'
     name: Create GitHub Release
     needs: [prepare, build-examples, npm-publish]
     runs-on: blacksmith-4vcpu-ubuntu-2404

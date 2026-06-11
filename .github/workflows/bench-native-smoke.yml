@@ -18,6 +18,7 @@ env:
 
 jobs:
   bench-native-smoke:
+    if: github.repository == 'anomalyco/opentui'
     name: Native Benchmark Smoke
     runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 15
