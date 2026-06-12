@@ -247,21 +247,40 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Bun 1.3.14 sometimes segfaults in its transpiler thread pool while
+          # tree-sitter workers spawn (RuntimeTranspilerStore race; crashes in
+          # the first seconds of a run, and all tests pass when it survives).
+          # Retry crash-signal exits (130+) only; real test failures fail fast.
+          retry_crashes() {
+            local attempt rc
+            for attempt in 1 2 3 4 5; do
+              rc=0
+              "$@" || rc=$?
+              if [ "$rc" -eq 0 ]; then return 0; fi
+              case "$rc" in
+                13[0-9]) echo "::warning::'$*' crashed with exit $rc (attempt $attempt/5), retrying..." ;;
+                *) return "$rc" ;;
+              esac
+            done
+            echo "'$*' still crashing after 5 attempts"
+            return "$rc"
+          }
+
           cd packages/core
           bun run test:native
-          bun run test:js
+          retry_crashes bun run test:js
 
           cd ../qrcode
-          bun run test
+          retry_crashes bun run test
 
           cd ../solid
-          bun run test
+          retry_crashes bun run test
 
           cd ../react
-          bun run test
+          retry_crashes bun run test
 
           cd ../keymap
-          bun run test
+          retry_crashes bun run test
 
           cd ../..
           bun run test:dist:fixtures
