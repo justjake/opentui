@@ -1,5 +1,5 @@
 import { isRenderable, type RootRenderable, type Renderable } from "../Renderable.js"
-import { Direction } from "./yoga-sync.js"
+import { Direction } from "../yoga.js"
 
 export const DEFAULT_FOOTER_HEIGHT = 12
 export const DEFAULT_AUTO_FOOTER_MIN_HEIGHT = 1
