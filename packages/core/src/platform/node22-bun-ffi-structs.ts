@@ -239,7 +239,7 @@ export function defineStruct(fields: any[], structDefOptions: any = {}) {
       const buffer = new ArrayBuffer(totalSize)
       const view = new DataView(buffer)
       const mappedValue = structDefOptions.mapValue ? structDefOptions.mapValue(value) : value
-      const context = { lengths: new Map<string, number>(), subBuffers: [] as ArrayBuffer[] }
+      const context = { lengths: new Map<string, number>(), subBuffers: [] as Array<ArrayBuffer | ArrayBufferView> }
 
       for (const field of layout) {
         const fieldValue = mappedValue[field.name] ?? field.default
@@ -286,7 +286,7 @@ export function defineStruct(fields: any[], structDefOptions: any = {}) {
     packList(values: any[], options?: any) {
       const buffer = new ArrayBuffer(totalSize * values.length)
       const view = new DataView(buffer)
-      const subBuffers: ArrayBuffer[] = []
+      const subBuffers: Array<ArrayBuffer | ArrayBufferView> = []
 
       values.forEach((value, index) => {
         const mappedValue = structDefOptions.mapValue ? structDefOptions.mapValue(value) : value
@@ -332,6 +332,13 @@ function buildField(name: string, rawType: any, options: any) {
     field.pack = (view: DataView, offset: number, value: unknown, input: any, _packOptions: any, context: any) => {
       const lengthValue = options.lengthOf ? context.lengths.get(options.lengthOf) : undefined
       const packedValue = options.packTransform ? options.packTransform(value) : (lengthValue ?? value)
+
+      if (rawType === "pointer" && (ArrayBuffer.isView(packedValue) || packedValue instanceof ArrayBuffer)) {
+        context.subBuffers.push(packedValue)
+        pack(view, offset, ptr(packedValue))
+        return
+      }
+
       pack(view, offset, packedValue)
     }
     field.unpack = (view: DataView, offset: number) => {

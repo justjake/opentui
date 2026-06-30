@@ -388,7 +388,7 @@ export function createNodeBackend(nodeFfi: NodeFfiBackend): FfiBackend {
       let libraryClosed = false
 
       return {
-        symbols: wrapNodeSymbols(functions, symbols, nodeFfi),
+        symbols: wrapNodeSymbols(functions, symbols),
         createCallback(callback, definition) {
           if (closed) {
             throw new Error(LIBRARY_CLOSED)
@@ -454,18 +454,13 @@ function normalizeNodeDefinitions<Fns extends Record<string, FFIFunction>>(
 function wrapNodeSymbols<Fns extends Record<string, FFIFunction>>(
   functions: Record<string, (...args: any[]) => any>,
   definitions: Fns,
-  nodeFfi: NodeFfiBackend,
 ): { [K in keyof Fns]: (...args: any[]) => any } {
   return Object.fromEntries(
-    Object.entries(functions).map(([name, fn]) => [name, wrapNodeSymbol(fn, definitions[name], nodeFfi)]),
+    Object.entries(functions).map(([name, fn]) => [name, wrapNodeSymbol(fn, definitions[name])]),
   ) as { [K in keyof Fns]: (...args: any[]) => any }
 }
 
-function wrapNodeSymbol(
-  fn: (...args: any[]) => any,
-  definition: FFIFunction,
-  nodeFfi: NodeFfiBackend,
-): (...args: any[]) => any {
+function wrapNodeSymbol(fn: (...args: any[]) => any, definition: FFIFunction): (...args: any[]) => any {
   const pointerArgIndexes = (definition.args ?? []).flatMap((type, index) =>
     isNodePointerArgumentType(type) ? [index] : [],
   )
@@ -475,13 +470,11 @@ function wrapNodeSymbol(
   }
 
   return (...args: any[]) => {
-    const normalizedArgs = args.slice()
-
     for (const index of pointerArgIndexes) {
-      normalizedArgs[index] = toNodePointerArgument(nodeFfi, normalizedArgs[index])
+      args[index] = toNodePointerArgument(args[index])
     }
 
-    return fn(...normalizedArgs)
+    return fn(...args)
   }
 }
 
@@ -489,7 +482,7 @@ function isNodePointerArgumentType(type: FFITypeOrString): boolean {
   return type === FFIType.ptr || type === FFIType.pointer || type === FFIType.function || type === FFIType.callback
 }
 
-function toNodePointerArgument(nodeFfi: NodeFfiBackend, value: unknown): bigint {
+function toNodePointerArgument(value: unknown): bigint | PointerSource {
   if (value == null) {
     return 0n
   }
@@ -499,11 +492,15 @@ function toNodePointerArgument(nodeFfi: NodeFfiBackend, value: unknown): bigint 
   }
 
   if (ArrayBuffer.isView(value)) {
+    if (!(value.buffer instanceof ArrayBuffer)) {
+      throw new TypeError(NODE_PTR_VALUE)
+    }
+
     if (value.byteLength === 0) {
       return 0n
     }
 
-    return toNodeSourcePointer(nodeFfi, value)
+    return value
   }
 
   if (value instanceof ArrayBuffer) {
@@ -511,7 +508,7 @@ function toNodePointerArgument(nodeFfi: NodeFfiBackend, value: unknown): bigint 
       return 0n
     }
 
-    return toNodeSourcePointer(nodeFfi, value)
+    return value
   }
 
   throw new TypeError(NODE_POINTER_ARGUMENT)
